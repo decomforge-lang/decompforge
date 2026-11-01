@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # Formato, Clippy y documentación se comprueban una sola vez; las pruebas se
+  # ejecutan en los tres sistemas operativos objetivo (RNF-05).
+  lint:
+    name: fmt + clippy + docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Rust estable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formato
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (cero advertencias)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Documentación de la API
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Rust estable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Pruebas
+        run: cargo test --workspace
+
+  coverage:
+    name: cobertura del núcleo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Rust con llvm-tools
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Instalar cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      # RNF-06: cobertura de líneas ≥ 80 % en el núcleo. La CLI no se mide aquí
+      # porque es una capa fina de entrada/salida.
+      - name: Medir cobertura
+        run: cargo llvm-cov --package decompforge-core --all-targets --fail-under-lines 80 --lcov --output-path lcov.info
+
+      - name: Publicar informe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-lcov
+          path: lcov.info
+          if-no-files-found: ignore
+
+  schema:
+    name: exportación JSON determinista
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Rust estable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar validador
+        run: python -m pip install --disable-pip-version-check jsonschema
+
+      - name: Crear proyecto de ejemplo (binario sintético)
+        run: cargo run -q -p decompforge-cli -- init demo --sample --dir target/demo
+
+      - name: Exportar dos veces
+        run: |
+          cargo run -q -p decompforge-cli -- export --format json --project target/demo/demo.dfproj --output target/demo/export-1.json
+          cargo run -q -p decompforge-cli -- export --format json --project target/demo/demo.dfproj --output target/demo/export-2.json
+
+      # RNF-02: mismas entradas → mismo JSON, byte a byte.
+      - name: Comprobar determinismo
+        run: diff --report-identical-files target/demo/export-1.json target/demo/export-2.json
+
+      - name: Validar contra el esquema
+        run: python scripts/validate_export.py target/demo/export-1.json
+
+  adapters:
+    name: adaptadores (Python + esquemas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias del adaptador
+        run: python -m pip install --disable-pip-version-check jsonschema
+
+      - name: Pruebas del cliente Python
+        working-directory: adapters/python
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Validar ejemplos `re-1.0`
+        env:
+          PYTHONPATH: adapters/python
+        run: |
+          python -m decompforge_re validate adapters/examples/export-re-1.0.json
+          python -m decompforge_re validate adapters/examples/updates-re-1.0.json
+
+      - name: Instalar Rust estable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Exportar el proyecto sintético en `re-1.0`
+        run: |
+          cargo run -q -p decompforge-cli -- init adapters --sample --dir target/adapters
+          cargo run -q -p decompforge-cli -- export --format re-json --project target/adapters/adapters.dfproj --output target/adapters/export.json
+
+      - name: Validar y generar un parche real
+        env:
+          PYTHONPATH: adapters/python
+        run: |
+          python -m decompforge_re validate target/adapters/export.json
+          python - <<'PY'
+          import json
+          from decompforge_re import load, save
+
+          export = load("target/adapters/export.json")
+          first = export["functions"][0]
+          updates = {
+              "schema_version": "re-1.0",
+              "kind": "updates",
+              "source": {"tool": "ci"},
+              "functions": [{
+                  "address": first["address"],
+                  "name": "demo_entry",
+                  "signature": "void demo_entry(void)",
+                  "comments": [{"address": first["address"], "text": "prueba de CI"}],
+              }],
+          }
+          save(updates, "target/adapters/updates.json")
+          PY
+
+      - name: Aplicar el parche y volver a validar
+        env:
+          PYTHONPATH: adapters/python
+        run: |
+          cargo run -q -p decompforge-cli -- apply target/adapters/updates.json --project target/adapters/adapters.dfproj
+          cargo run -q -p decompforge-cli -- export --format re-json --project target/adapters/adapters.dfproj --output target/adapters/export-after.json
+          python -m decompforge_re validate target/adapters/export-after.json
+

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decompforge.invalid/schemas/exchange-1.0.json",
+  "title": "DecompForge - formato de intercambio 1.0",
+  "description": "Formato JSON de exportacion/importacion de un proyecto (Documento Maestro, seccion 9.4). Las direcciones son cadenas hexadecimales en minusculas.",
+  "type": "object",
+  "required": ["schema_version", "project", "functions"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": {
+      "type": "object",
+      "required": ["name", "arch", "endian"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "platform": { "type": ["string", "null"] },
+        "arch": { "enum": ["mips", "ppc", "arm", "arm64", "x86", "x86_64", "spu", "unknown", null] },
+        "endian": { "enum": ["little", "big", null] },
+        "format": { "enum": ["elf", "dol", "pe", "nso", "flat", null] },
+        "bits": { "enum": [32, 64, null] },
+        "entry": { "oneOf": [{ "$ref": "#/$defs/address" }, { "type": "null" }] },
+        "binary_sha256": { "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "start", "size", "perms"],
+        "properties": {
+          "name": { "type": "string" },
+          "start": { "$ref": "#/$defs/address" },
+          "size": { "type": "integer", "minimum": 0 },
+          "perms": { "type": "string", "pattern": "^[r-][w-][x-]$" },
+          "file_offset": { "type": ["integer", "null"], "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["address", "name", "kind", "origin"],
+        "properties": {
+          "address": { "$ref": "#/$defs/address" },
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string" },
+          "origin": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["address", "size", "state"],
+        "properties": {
+          "address": { "$ref": "#/$defs/address" },
+          "size": { "type": "integer", "minimum": 0 },
+          "name": { "type": ["string", "null"] },
+          "state": { "enum": ["detected", "named", "decompiled", "matched", "portable", "verified"] },
+          "calls": { "type": "array", "items": { "$ref": "#/$defs/address" } },
+          "strings": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "address": { "type": "string", "pattern": "^0x[0-9a-f]{8,16}$" }
+  }
+}

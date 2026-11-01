@@ -1,0 +1,92 @@
+{
+  "schema_version": "re-1.0",
+  "kind": "export",
+  "source": {
+    "tool": "ghidra",
+    "version": "11.3",
+    "program": "demo.elf"
+  },
+  "project": {
+    "name": "demo",
+    "arch": "mips",
+    "endian": "little",
+    "bits": 32,
+    "entry": "0x00100000"
+  },
+  "functions": [
+    {
+      "address": "0x00100000",
+      "name": "entry",
+      "signature": "void entry(void)",
+      "size": 8,
+      "instructions": [
+        {
+          "address": "0x00100000",
+          "bytes": "0c040010",
+          "mnemonic": "jal",
+          "operands": "0x00100040",
+          "comment": "llama a game_update_player"
+        },
+        {
+          "address": "0x00100004",
+          "bytes": "00000000",
+          "mnemonic": "nop",
+          "operands": ""
+        }
+      ],
+      "comments": [
+        {
+          "address": "0x00100000",
+          "text": "punto de entrada del programa"
+        }
+      ]
+    },
+    {
+      "address": "0x00100040",
+      "name": "game_update_player",
+      "signature": "void game_update_player(Player *p)",
+      "size": 12,
+      "instructions": [
+        {
+          "address": "0x00100040",
+          "bytes": "8c820000",
+          "mnemonic": "lw",
+          "operands": "v0, 0x0(a0)"
+        },
+        {
+          "address": "0x00100044",
+          "bytes": "ac820004",
+          "mnemonic": "sw",
+          "operands": "v0, 0x4(a0)"
+        },
+        {
+          "address": "0x00100048",
+          "bytes": "03e00008",
+          "mnemonic": "jr",
+          "operands": "ra"
+        }
+      ],
+      "comments": [
+        {
+          "address": "0x00100040",
+          "text": "actualiza el estado del jugador"
+        }
+      ]
+    }
+  ],
+  "xrefs": [
+    {
+      "src": "0x00100000",
+      "dst": "0x00100040",
+      "kind": "call"
+    }
+  ],
+  "types": [
+    {
+      "name": "Player",
+      "kind": "struct",
+      "size": 16,
+      "definition": "struct Player { int health; int x; int y; int state; };"
+    }
+  ]
+}

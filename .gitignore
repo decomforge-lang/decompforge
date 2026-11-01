@@ -1,0 +1,25 @@
+# Compilacion
+/target/
+**/*.rs.bk
+
+# Proyectos de trabajo y binarios del usuario: NUNCA se versionan
+*.dfproj
+*.dfproj-journal
+*.elf
+*.self
+*.nso
+*.nro
+*.xex
+*.dol
+*.iso
+*.bin
+*.rom
+
+# Python / Node
+__pycache__/
+.venv/
+node_modules/
+
+# Secretos
+.env
+*.key

@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decompforge.invalid/schemas/re-1.0.json",
+  "title": "DecompForge - intercambio con herramientas de ingeniería inversa 1.0",
+  "description": "Documento bidireccional entre Ghidra/IDA/Binary Ninja y DecompForge. El campo kind distingue una exportación completa (funciones, instrucciones, referencias y tipos) de un parche de nombres, firmas y comentarios. Las direcciones son cadenas hexadecimales en minúsculas.",
+  "oneOf": [
+    { "$ref": "#/$defs/export" },
+    { "$ref": "#/$defs/updates" }
+  ],
+  "$defs": {
+    "address": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{8,16}$",
+      "description": "Dirección virtual canónica: 0x más 8-16 dígitos hexadecimales en minúsculas."
+    },
+    "source": {
+      "type": "object",
+      "required": ["tool"],
+      "properties": {
+        "tool": { "type": "string", "minLength": 1 },
+        "version": { "type": "string" },
+        "program": { "type": "string" },
+        "generated_at": {
+          "type": "string",
+          "description": "Marca ISO-8601 informativa; no se usa para comparar documentos."
+        }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "arch", "endian"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "arch": {
+          "enum": ["mips", "ppc", "arm", "arm64", "x86", "x86_64", "spu", "unknown"]
+        },
+        "endian": { "enum": ["little", "big"] },
+        "bits": { "enum": [32, 64] },
+        "entry": { "$ref": "#/$defs/address" }
+      },
+      "additionalProperties": false
+    },
+    "instruction": {
+      "type": "object",
+      "required": ["address", "mnemonic"],
+      "properties": {
+        "address": { "$ref": "#/$defs/address" },
+        "bytes": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{2})+$",
+          "description": "Bytes originales en hexadecimal, sin espacios."
+        },
+        "mnemonic": { "type": "string", "minLength": 1 },
+        "operands": { "type": "string" },
+        "comment": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "comment": {
+      "type": "object",
+      "required": ["address", "text"],
+      "properties": {
+        "address": { "$ref": "#/$defs/address" },
+        "text": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "function": {
+      "type": "object",
+      "required": ["address", "name"],
+      "properties": {
+        "address": { "$ref": "#/$defs/address" },
+        "name": { "type": "string", "minLength": 1 },
+        "signature": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 },
+        "instructions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/instruction" }
+        },
+        "comments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/comment" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "xref": {
+      "type": "object",
+      "required": ["src", "dst", "kind"],
+      "properties": {
+        "src": { "$ref": "#/$defs/address" },
+        "dst": { "$ref": "#/$defs/address" },
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "call, jump, data, read, write, ... en minúsculas."
+        }
+      },
+      "additionalProperties": false
+    },
+    "type": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "struct, union, enum, typedef, function, ..."
+        },
+        "size": { "type": "integer", "minimum": 0 },
+        "definition": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "function_update": {
+      "type": "object",
+      "required": ["address"],
+      "properties": {
+        "address": { "$ref": "#/$defs/address" },
+        "name": { "type": "string", "minLength": 1 },
+        "signature": { "type": "string", "minLength": 1 },
+        "comments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/comment" }
+        }
+      },
+      "anyOf": [
+        { "required": ["name"] },
+        { "required": ["signature"] },
+        { "required": ["comments"] }
+      ],
+      "additionalProperties": false
+    },
+    "export": {
+      "type": "object",
+      "required": ["schema_version", "kind", "project", "functions"],
+      "properties": {
+        "schema_version": { "const": "re-1.0" },
+        "kind": { "const": "export" },
+        "source": { "$ref": "#/$defs/source" },
+        "project": { "$ref": "#/$defs/project" },
+        "functions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/function" }
+        },
+        "xrefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/xref" }
+        },
+        "types": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/type" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "updates": {
+      "type": "object",
+      "required": ["schema_version", "kind", "functions"],
+      "properties": {
+        "schema_version": { "const": "re-1.0" },
+        "kind": { "const": "updates" },
+        "source": { "$ref": "#/$defs/source" },
+        "functions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/function_update" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

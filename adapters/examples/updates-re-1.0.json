@@ -1,0 +1,26 @@
+{
+  "schema_version": "re-1.0",
+  "kind": "updates",
+  "source": {
+    "tool": "ghidra",
+    "version": "11.3",
+    "program": "demo.elf"
+  },
+  "functions": [
+    {
+      "address": "0x00100040",
+      "name": "player_update",
+      "signature": "void player_update(Player *player)",
+      "comments": [
+        {
+          "address": "0x00100040",
+          "text": "actualiza el jugador"
+        },
+        {
+          "address": "0x00100044",
+          "text": "guarda la posición"
+        }
+      ]
+    }
+  ]
+}
