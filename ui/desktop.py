@@ -72,7 +72,7 @@ class DecompForgeApp(tk.Tk):
         self.config(menu=menubar)
 
         m_dec = tk.Menu(menubar, tearoff=0, bg="#171a21", fg="#e6e8ee")
-        m_dec.add_command(label="Abrir binario...", command=self.act_open_binary)
+        m_dec.add_command(label="Abrir binario...", command=self.act_pick_binary)
         m_dec.add_command(label="Cargar + analizar", command=self.act_load_analyze)
         m_dec.add_command(label="Re-analizar", command=self.act_reanalyze)
         m_dec.add_command(label="Info del proyecto", command=self.act_info)
