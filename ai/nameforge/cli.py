@@ -6,14 +6,14 @@ import os
 import sys
 
 from .heuristic import heuristic_suggest
-from .provider import openai_suggest, validate_suggestions
+from .provider import PROVIDERS, suggest as llm_suggest, validate_suggestions
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="NameForge: propuestas de nombres")
     parser.add_argument(
         "--provider",
-        choices=["heuristic", "openai"],
+        choices=["heuristic", "openai", "anthropic", "gemini"],
         default=os.environ.get("NAMEFORGE_PROVIDER", "heuristic"),
     )
     parser.add_argument("--model", default=None)
@@ -21,7 +21,12 @@ def main(argv=None) -> int:
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--fallback-heuristic", action="store_true")
+    parser.add_argument("--list-providers", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.list_providers:
+        print(json.dumps({"providers": ["heuristic"] + sorted(PROVIDERS.keys())}, ensure_ascii=False))
+        return 0
 
     raw = sys.stdin.read()
     try:
@@ -39,14 +44,16 @@ def main(argv=None) -> int:
         "base_url": args.base_url,
         "api_key": args.api_key,
         "timeout": args.timeout,
+        "provider": args.provider if args.provider != "heuristic" else None,
     }
 
     try:
         if args.provider == "heuristic":
             suggestions = heuristic_suggest(context, style)
         else:
-            suggestions = openai_suggest(context, style, config)
-    except Exception as exc:  # noqa: BLE001 - queremos informar y salir
+            config["provider"] = args.provider
+            suggestions = llm_suggest(context, style, config)
+    except Exception as exc:  # noqa: BLE001
         if args.fallback_heuristic and args.provider != "heuristic":
             suggestions = heuristic_suggest(context, style)
         else:

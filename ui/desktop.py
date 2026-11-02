@@ -149,15 +149,30 @@ class DecompForgeApp(tk.Tk):
         if p:
             self.binary.set(p)
 
-    def act_open_binary(self):
-        self.act_pick_binary()
+    def _ensure_project(self, binp):
+        proj = self.project.get().strip()
+        if proj:
+            return proj
+        if not binp:
+            return ""
+        base = os.path.splitext(os.path.basename(binp))[0]
+        proj = os.path.join(os.path.dirname(binp) or ".", base + ".dfproj")
+        if not os.path.exists(proj):
+            self.log(f"$ decompforge init {base} --dir {os.path.dirname(binp) or '.'}")
+            r = subprocess.run([BIN, "init", base, "--dir", os.path.dirname(binp) or "."], capture_output=True, text=True)
+            self.log(r.stdout + (r.stderr if r.stderr else ""))
+        self.project.set(proj)
+        return proj
 
     # ---------- decompilador ----------
     def act_load_analyze(self):
         binp = self.binary.get().strip()
-        proj = self.project.get().strip()
-        if not binp or not proj:
-            messagebox.showwarning("Faltan datos", "Indica binario y proyecto.")
+        proj = self._ensure_project(binp)
+        if not binp:
+            messagebox.showwarning("Faltan datos", "Indica o selecciona un binario (.exe, .elf, .bin, etc.).")
+            return
+        if not proj:
+            messagebox.showwarning("Faltan datos", "No se pudo crear el proyecto.")
             return
         self.set_status("cargando y analizando…")
         self.log(f"$ decompforge load {binp} --project {proj}")
@@ -207,6 +222,10 @@ class DecompForgeApp(tk.Tk):
         if not binp or not proj:
             messagebox.showwarning("Faltan datos", "Indica binario y proyecto.")
             return
+        prov = tk.simpledialog.askstring("Proveedor IA", "heuristic / openai / anthropic / gemini", initialvalue="heuristic")
+        if prov is None:
+            return
+        prov = prov.strip().lower() or "heuristic"
         args = ["name", binp, "--project", proj, "--json"]
         if batch:
             args.insert(2, "--batch")
@@ -215,6 +234,21 @@ class DecompForgeApp(tk.Tk):
             if not func:
                 return
             args += ["--function", func]
+        if prov != "heuristic":
+            key = tk.simpledialog.askstring("API Key", f"Clave para {prov} (o deja vacío para usar variable de entorno):", show="*")
+            cfg_path = os.path.join(os.path.dirname(proj) or ".", "nameforge.json")
+            cfg = {
+                "style": {"case": "snake_case", "prefix": "", "banned": [], "max_length": 64},
+                "provider": {"kind": "command", "argv": ["py", "-3", "-m", "nameforge", "--provider", prov], "timeout_secs": 120},
+            }
+            if key:
+                os.environ[f"{prov.upper()}_API_KEY".replace("OPENAI","OPENAI")] = key
+            try:
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2)
+                args += ["--config", cfg_path]
+            except Exception as e:
+                self.log(f"no se pudo escribir config: {e}")
         self.log("$ " + " ".join(args))
         run_cli(args, on_done=lambda c, o: self._on_name(c, o))
 

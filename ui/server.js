@@ -140,7 +140,7 @@ function detectFile(filePath) {
 
   // Raw / unknown: try extension
   const ext = path.extname(filePath).toLowerCase();
-  const extMap = { '.exe':'windows (PE?)', '.elf':'elf', '.bin':'binario plano', '.rom':'rom plana', '.iso':'imagen de disco', '.nso':'nintendo switch', '.dol':'gamecube/wii' };
+  const extMap = { '.exe':'windows (PE)', '.elf':'elf', '.bin':'binario plano', '.rom':'rom plana', '.iso':'imagen de disco', '.nso':'nintendo switch', '.dol':'gamecube/wii' };
   if (extMap[ext]) { result.platform = extMap[ext]; result.notes.push('detectado por extension'); }
   return result;
 }
