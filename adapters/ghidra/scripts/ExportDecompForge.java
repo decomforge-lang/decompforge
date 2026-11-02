@@ -6,7 +6,8 @@
 //     -postScript ExportDecompForge.java /ruta/export.json
 //
 // Incluye funciones, instrucciones, comentarios, referencias cruzadas y tipos
-// definidos por el usuario. No modifica el programa.
+// que no pertenecen a la biblioteca base (definidos por el usuario o
+// importados). No modifica el programa.
 //@category DecompForge
 //@menupath Tools.DecompForge.Exportar re-1.0
 //@keybinding
@@ -32,12 +33,14 @@ import com.google.gson.JsonObject;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
+import ghidra.program.model.data.ArchiveType;
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.Enum;
 import ghidra.program.model.data.FunctionDefinition;
 import ghidra.program.model.data.Pointer;
+import ghidra.program.model.data.SourceArchive;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.TypeDef;
 import ghidra.program.model.data.Union;
@@ -48,12 +51,10 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.model.symbol.ReferenceManager;
-import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.SymbolTable;
 
 public class ExportDecompForge extends GhidraScript {
@@ -284,19 +285,15 @@ public class ExportDecompForge extends GhidraScript {
             return null;
         }
         byte[] raw = new byte[length];
-        try {
-            int read = instruction.getBytes(raw, 0);
-            if (read <= 0) {
-                return null;
-            }
-            StringBuilder hex = new StringBuilder(read * 2);
-            for (int i = 0; i < read; i++) {
-                hex.append(String.format("%02x", raw[i] & 0xff));
-            }
-            return hex.toString();
-        } catch (MemoryAccessException e) {
+        int read = instruction.getBytes(raw, 0);
+        if (read <= 0) {
             return null;
         }
+        StringBuilder hex = new StringBuilder(read * 2);
+        for (int i = 0; i < read; i++) {
+            hex.append(String.format("%02x", raw[i] & 0xff));
+        }
+        return hex.toString();
     }
 
     private JsonArray xrefs(Program program) {
@@ -367,7 +364,7 @@ public class ExportDecompForge extends GhidraScript {
         return types.toJson();
     }
 
-    private String address(Address address) {
+    private static String address(Address address) {
         String hex = Long.toUnsignedString(address.getOffset(), 16);
         int width = hex.length() <= 8 ? 8 : 16;
         while (hex.length() < width) {
@@ -392,8 +389,11 @@ public class ExportDecompForge extends GhidraScript {
                 if (type == null || type.getName() == null || type.getName().isBlank()) {
                     continue;
                 }
-                SourceType source = type.getSource();
-                if (source != SourceType.USER_DEFINED && source != SourceType.IMPORTED) {
+                // La API publica de `DataType` no expone `getSource()`, asi que
+                // se filtra por archivo de origen: descartamos la biblioteca
+                // base y conservamos lo definido por el usuario o importado.
+                SourceArchive archive = type.getSourceArchive();
+                if (archive != null && archive.getArchiveType() == ArchiveType.BUILT_IN) {
                     continue;
                 }
                 ordered.add(type);

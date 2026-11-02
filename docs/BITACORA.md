@@ -354,3 +354,77 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
 4. Fase 3: NameForge (nombres con confianza y justificación).
 
 ---
+
+## 2026-11-02 · Sesión 6 — Publicación, primer CI y verificación real de Ghidra
+
+### Punto de partida
+- Fase 2 cerrada, pero el repositorio no tenía remoto: el CI nunca se había
+  ejecutado y los scripts de Ghidra nunca se habían compilado.
+- La cobertura no se había medido nunca en local (el toolchain GNU de Windows no
+  incluye `profiler_builtins`).
+
+### Hecho
+
+**Publicación e integración continua**
+- Repositorio público <https://github.com/decomforge-lang/decompforge>; `main`
+  con el commit inicial `fce05dc` y el remoto `origin` configurado.
+- Primera ejecución del CI ([run
+  #1](https://github.com/decomforge-lang/decompforge/actions/runs/41315503527)):
+  `success` en `lint`, `test` (Windows/Linux/macOS), `coverage`, `schema` y
+  `adapters`. No hizo falta tocar el flujo de trabajo.
+
+**Ghidra compilado y probado por primera vez**
+- Instalado Ghidra 12.2 y JDK 25 (Ghidra 12.2 declara
+  `application.java.min=25`). La primera compilación con `javac` encontró tres
+  errores reales que el editor no detectaba:
+  1. `address(Address)` era un método de instancia usado desde `addComment`
+     estático → ahora es `static`.
+  2. `DataType.getSource()` no existe en la API pública → los tipos se filtran
+     por `SourceArchive`/`ArchiveType.BUILT_IN` (se descarta solo la biblioteca
+     base).
+  3. `Instruction.getBytes(byte[], int)` ya no declara
+     `MemoryAccessException` → se eliminó el `catch` inalcanzable.
+- Ciclo completo en `analyzeHeadless` con un PE x86_64 sintético compilado con
+  `gcc` (100 funciones, 1693 referencias, 156 tipos): exportar → validar con el
+  cliente Python → aplicar `updates` (1 nombre, 1 firma, 2 comentarios) →
+  reexportar. Nombre, firma y ambos comentarios persisten.
+
+**Herramientas nuevas**
+- `scripts/check-ghidra.ps1`: localiza Ghidra y un JDK que cumpla el mínimo,
+  compila los dos scripts y, si hay `gcc`, ejecuta el ciclo headless completo con
+  comprobaciones. Todo ocurre en `target/`, que no se versiona.
+- `scripts/coverage.ps1`: carga el entorno de Visual Studio Build Tools con
+  `vswhere` + `vcvars64.bat` y ejecuta `cargo llvm-cov` con el toolchain MSVC,
+  sin cambiar el toolchain por defecto del usuario.
+- `scripts/check.ps1`: si no existe `python` en el PATH usa el lanzador `py -3`.
+  Antes, en un Windows con el instalador oficial, los adaptadores se omitían con
+  un aviso y el script terminaba igualmente en "Todo OK".
+
+### Verificación
+- `cargo test --workspace`: 56 pruebas correctas.
+- Cliente Python: 25 pruebas correctas (Python 3.14).
+- `scripts/check.ps1`: "Todo OK", ahora con adaptadores incluidos.
+- `scripts/coverage.ps1`: **91,95 % de líneas**, 88,95 % de regiones y 90,05 % de
+  funciones en `decompforge-core` (RNF-06: ≥ 80 %). El umbral
+  `--fail-under-lines 80` está activo.
+- `scripts/check-ghidra.ps1`: "Ghidra OK".
+- CI run #1: `success`.
+
+### Limitaciones conocidas (sin maquillar)
+- **macOS**: configurado en CI, no probado en un equipo real.
+- **Cobertura local**: exige Visual Studio Build Tools; con el toolchain GNU no
+  hay `profiler_builtins`.
+- **Ghidra**: verificado con 12.2 (Java 25). Otros 11.x/12.x no se han probado.
+- **NSO/LZ4**: la descompresión sigue pendiente.
+- **Tipos de Ghidra**: no se reconstruye una definición C completa y los tipos
+  creados por el análisis pueden colarse junto a los del usuario.
+- **Documento Maestro**: `docs/original/DecompForge_Documento_Maestro.docx` está
+  versionado en un repositorio público; conviene revisarlo antes de difundir el
+  repositorio.
+
+### Siguiente
+1. Descompresión NSO (LZ4) para analizar binarios reales de Switch.
+2. CFG y *ownership* de instrucciones, incluido el *delay slot* MIPS.
+3. Fase 3: NameForge (nombres con confianza y justificación).
+
+---

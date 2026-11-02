@@ -71,3 +71,12 @@ Ghidra en el entorno de desarrollo); la primera compilación real debe hacerse
 con el Script Manager o `analyzeHeadless`.
 (-) El comentario importado en instrucciones se guarda como `EOL`; no se
 distinguen `PRE`/`POST`/`PLATE`.
+
+## Actualización (2026-11-02)
+
+La compilación real ya está hecha: Ghidra 12.2 con JDK 25. La primera pasada de
+`javac` encontró tres errores que el editor no veía (`address` no estático,
+`DataType.getSource()` inexistente y un `catch` de `MemoryAccessException`
+inalcanzable). Se corrigieron y `scripts/check-ghidra.ps1` reproduce el ciclo
+completo en modo headless, así que el punto anterior queda resuelto: los scripts
+se compilan y prueban contra una instalación real en cada cambio que los toque.

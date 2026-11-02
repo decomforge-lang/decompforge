@@ -22,8 +22,28 @@ También puedes dejarlos donde están y pasar `-scriptPath adapters/ghidra/scrip
 a `analyzeHeadless`, o usar **Window → Script Manager → Script Directories** en
 la GUI. Los scripts aparecen en **Tools → DecompForge**.
 
-Requisitos: Ghidra 11.x (probado contra su API pública; ver *Limitaciones*).
-Ghidra incluye Gson, así que no hay que instalar dependencias Java.
+Requisitos: Ghidra 12.x con su JDK correspondiente (12.2 exige Java 25, según
+`Ghidra/application.properties`). Ghidra incluye Gson, así que no hay que
+instalar dependencias Java.
+
+## Verificación
+
+`scripts/check-ghidra.ps1` automatiza lo que antes era manual:
+
+1. compila ambos `.java` con `javac` contra los JAR de la instalación (detecta
+   cambios de API que el editor no ve);
+2. si hay `gcc`, compila un binario C mínimo en `target/ghidra-test`, lo importa
+   con `analyzeHeadless`, ejecuta `ExportDecompForge`, valida el JSON con el
+   cliente Python, aplica un documento `updates`, reexporta y comprueba que el
+   nombre, la firma y los dos comentarios persisten.
+
+```powershell
+./scripts/check-ghidra.ps1                      # autodetecta Ghidra y el JDK
+./scripts/check-ghidra.ps1 -CompileOnly         # solo compilacion
+./scripts/check-ghidra.ps1 -GhidraHome D:\ghidra_12.2_PUBLIC -JavaHome C:\jdk-25
+```
+
+El binario y los proyectos de prueba se crean en `target/` y no se versionan.
 
 ## Exportar
 
@@ -78,14 +98,14 @@ El script:
 | `function.instructions[]` | instrucciones del cuerpo de la función |
 | `function.comments[]` | comentario de función (entrada) y comentarios de instrucción |
 | `xrefs[]` | `ReferenceManager` (`call`, `jump`, `cond_jump`, `read`, `write`, `read_write`, `data`, `ref`) |
-| `types[]` | tipos `USER_DEFINED` o `IMPORTED` del `DataTypeManager` |
+| `types[]` | tipos del `DataTypeManager` que no pertenecen a la biblioteca base (`ArchiveType.BUILT_IN`) |
 
 ## Limitaciones conocidas
 
-- **No compilado en este repositorio**: el entorno de desarrollo no tiene JDK ni
-  Ghidra. Los scripts se escribieron contra la API pública de Ghidra 11.x; la
-  primera compilación real debe hacerse con `analyzeHeadless` o el Script
-  Manager y corregir cualquier cambio de API menor.
+- **Versión verificada**: Ghidra 12.2 con Java 25. La API pública de `DataType`
+  no expone el `SourceType` original, así que los tipos se filtran por archivo
+  de origen (se descarta solo la biblioteca base); los tipos creados por el
+  análisis pueden aparecer junto a los del usuario.
 - La exportación de tipos incluye nombre, categoría y tamaño; no reconstruye
   una definición C completa (el campo `definition` solo se rellena si Ghidra
   tiene descripción).

@@ -99,9 +99,10 @@ Capstone no lo desensambla: `analyze` devuelve un error explícito (código 4).
 
 ```powershell
 ./scripts/check.ps1        # fmt + clippy (-D warnings) + tests + docs + adaptadores   (o: make check)
+./scripts/coverage.ps1     # cobertura del nucleo (RNF-06), Windows con MSVC   (o: make coverage)
+./scripts/check-ghidra.ps1 # compila los scripts de Ghidra y prueba el ciclo re-1.0 completo
 make adapters              # pruebas del cliente Python (requiere jsonschema)
 cargo doc --workspace --no-deps --open          # API pública del núcleo
-cargo llvm-cov --package decompforge-core --all-targets   # cobertura (RNF-06)
 ```
 
 El CI de GitHub Actions (`.github/workflows/ci.yml`) ejecuta formato, Clippy,
@@ -111,9 +112,11 @@ byte a byte y válido contra su esquema, y ejecuta el ciclo `re-1.0`
 exportar → validar → parche → aplicar → reexportar
 ([ADR-011](docs/adr/ADR-011-integracion-continua.md),
 [ADR-012](docs/adr/ADR-012-esquema-re-y-adaptadores.md)).
-La cobertura se mide con `cargo-llvm-cov` (`rustup component add llvm-tools-preview`
+La cobertura se mide con `cargo-llvm-cov` (`rustup component add llvm-tools`
 y `cargo install cargo-llvm-cov --locked`). En Windows con toolchain GNU no está
-disponible (`profiler_builtins` no se distribuye); usa el CI o un toolchain MSVC.
+disponible (`profiler_builtins` no se distribuye); `scripts/coverage.ps1` carga
+el entorno de Visual Studio Build Tools y usa el toolchain MSVC sin cambiar el
+toolchain por defecto.
 
 Estructura (ver Documento Maestro §5.4): `core/` (Rust), `cli/` (Rust),
 `schemas/` (JSON Schema de los formatos `1.0` y `re-1.0`), `adapters/`

@@ -124,7 +124,7 @@ capa de plataforma → TwinRun → documentación y métricas.
 | RNF-03 | Seguridad | Compiladores y binarios en contenedores aislados | Cargadores y analizador sin *panic* ante entradas mutadas; contenedores pendientes |
 | RNF-04 | Privacidad | Modo local; envío a IA opcional | Fase 3 |
 | RNF-05 | Portabilidad | Windows, Linux y macOS | Matriz de CI en los tres sistemas ([ADR-011](adr/ADR-011-integracion-continua.md)); probado localmente en Windows 10 (GNU) y Linux |
-| RNF-06 | Mantenibilidad | Cobertura ≥ 80 % en núcleo; API documentada | CI exige ≥ 80 % de líneas en `decompforge-core` con `cargo-llvm-cov`; `cargo doc` sin advertencias y `missing_docs` activo ([ADR-011](adr/ADR-011-integracion-continua.md)). La cifra local no está disponible con el toolchain GNU de Windows |
+| RNF-06 | Mantenibilidad | Cobertura ≥ 80 % en núcleo; API documentada | CI exige ≥ 80 % de líneas en `decompforge-core` con `cargo-llvm-cov`; medido en local con el toolchain MSVC el 2026-11-02: **91,95 % de líneas** (`scripts/coverage.ps1`). `cargo doc` sin advertencias y `missing_docs` activo ([ADR-011](adr/ADR-011-integracion-continua.md)) |
 | RNF-07 | Extensibilidad | Nueva arquitectura sin tocar el núcleo | Pendiente (plugins) |
 | RNF-08 | Trazabilidad | Cada cambio de IA con origen y validación | Base lista (`audit_log` inmutable, `source.origin`; acción `analyze` auditable) |
 | RNF-09\* | Robustez ante entradas malformadas | Ninguna entrada provoca *panic* | **Hecho** (fuzzing ligero de cargadores y análisis; cargo-fuzz pendiente para CI) |

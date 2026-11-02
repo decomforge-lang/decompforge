@@ -37,18 +37,37 @@ try {
 
 # Adaptadores de la Fase 2. Son opcionales: si no hay Python o falta
 # `jsonschema`, se avisa y se continua (la CI siempre los ejecuta).
-$python = $env:DECOMPFORGE_PYTHON
-if (-not $python) {
+#
+# El instalador oficial de Windows no anade `python` al PATH por defecto; si
+# existe, si que esta el lanzador `py`. Aceptamos las tres formas:
+#   1. DECOMPFORGE_PYTHON (ruta explicita a un interprete)
+#   2. `python` en el PATH
+#   3. el lanzador `py -3`
+$pythonCommand = @()
+if ($env:DECOMPFORGE_PYTHON) {
+    $pythonCommand = @($env:DECOMPFORGE_PYTHON)
+} else {
     $candidate = Get-Command python -ErrorAction SilentlyContinue
-    if ($candidate) { $python = $candidate.Source }
+    if ($candidate) {
+        $pythonCommand = @($candidate.Source)
+    } else {
+        $launcher = Get-Command py -ErrorAction SilentlyContinue
+        if ($launcher) { $pythonCommand = @($launcher.Source, "-3") }
+    }
 }
-if ($python -and (Test-Path $python)) {
+if ($pythonCommand.Count -gt 0) {
+    $pythonExe = $pythonCommand[0]
+    $pythonPrefix = @()
+    if ($pythonCommand.Count -gt 1) {
+        $pythonPrefix = $pythonCommand[1..($pythonCommand.Count - 1)]
+    }
+
     function Invoke-Python([string[]]$PythonArgs) {
-        Write-Host "==> python $($PythonArgs -join ' ')" -ForegroundColor Cyan
+        Write-Host "==> $($pythonCommand -join ' ') $($PythonArgs -join ' ')" -ForegroundColor Cyan
         $previous = $ErrorActionPreference
         try {
             $ErrorActionPreference = "Continue"
-            & $python @PythonArgs 2>&1 | ForEach-Object { Write-Host $_ }
+            & $pythonExe @pythonPrefix @PythonArgs 2>&1 | ForEach-Object { Write-Host $_ }
             $code = $LASTEXITCODE
         } finally {
             $ErrorActionPreference = $previous
@@ -61,7 +80,7 @@ if ($python -and (Test-Path $python)) {
     $previous = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        & $python -c "import jsonschema" 2>$null
+        & $pythonExe @pythonPrefix -c "import jsonschema" 2>$null
         $has_schema = $LASTEXITCODE -eq 0
     } finally {
         $ErrorActionPreference = $previous

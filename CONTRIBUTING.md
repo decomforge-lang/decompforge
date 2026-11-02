@@ -29,12 +29,22 @@ En Windows: `./scripts/check.ps1`; en Linux/macOS: `make check`.
 cargo llvm-cov --package decompforge-core --all-targets --fail-under-lines 80
 ```
 
+En Windows con el toolchain GNU no funciona (`profiler_builtins` no se
+distribuye): usa `./scripts/coverage.ps1`, que localiza Visual Studio Build Tools
+y ejecuta la misma medición con el toolchain MSVC.
+
 5. Si tocas los adaptadores o los esquemas `re-1.0`:
 
 ```
 cd adapters/python
 python -m unittest discover -s tests -t . -v
 ```
+
+En Windows, `./scripts/check-ghidra.ps1` compila los scripts Java contra los JAR
+de una instalación real de Ghidra y, si hay `gcc`, ejecuta el ciclo completo
+exportar → validar → aplicar → reexportar en modo headless. Requiere
+`GHIDRA_HOME` (o `-GhidraHome`) y un JDK que cumpla el mínimo de Ghidra
+(`application.java.min`).
 
 Requiere Python ≥ 3.9 y `jsonschema`. El esquema se busca en
 `DECOMPFORGE_RE_SCHEMA`, en la copia empaquetada o en `schemas/`; si instalas el
