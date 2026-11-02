@@ -12,6 +12,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "1"
+# Descompresion LZ4 por bloques de los segmentos NSO (RF-01).
+lz4_flex = "0.11"
 # Capstone 5 con solo las arquitecturas que usamos (menos C que compilar).
 capstone = { version = "0.14", default-features = false, features = [
     "std",

@@ -85,9 +85,52 @@ fn nso_header_plain_and_compressed() {
     assert_eq!(sec(&b, ".bss").start, 0x2010);
     assert!(b.notes.is_empty());
 
+    // Marcado como comprimido pero `compressed_size == size`: se guarda tal cual.
     let c = load(&syn::nso_arm64(true), &opts()).unwrap();
     assert_eq!(c.notes.len(), 3);
     assert!(c.notes[0].contains("LZ4"));
+    assert_eq!(sec(&c, ".text").file_offset, Some(0x100));
+}
+
+#[test]
+fn nso_lz4_is_materialized_for_analysis() {
+    use decompforge_core::loader::image_data;
+    use std::borrow::Cow;
+
+    let bin = syn::nso_arm64_lz4();
+    let b = load(&bin, &opts()).unwrap();
+    let original_len = bin.len() as u64;
+    // Los segmentos comprimidos se appendean al final del archivo.
+    assert_eq!(sec(&b, ".text").file_offset, Some(original_len));
+    assert_eq!(sec(&b, ".text").size, 0x80);
+    assert_eq!(sec(&b, ".rodata").size, 0x40);
+    assert_eq!(sec(&b, ".data").size, 0x40);
+    assert_eq!(sec(&b, ".bss").start, 0x2040);
+    assert!(b.notes.iter().any(|n| n.contains("imagen")));
+
+    let image = image_data(&bin, Format::Nso).unwrap();
+    assert!(matches!(image, Cow::Owned(_)));
+    assert_eq!(image.len() as u64, original_len + 0x80 + 0x40 + 0x40);
+    let text = &image[original_len as usize..original_len as usize + 0x80];
+    assert_eq!(&text[..4], &[0xC0, 0x03, 0x5F, 0xD6]); // ret
+    let rodata_off = sec(&b, ".rodata").file_offset.unwrap() as usize;
+    assert_eq!(&image[rodata_off..rodata_off + 4], &[0x40, 0x41, 0x42, 0x43]);
+    let data_off = sec(&b, ".data").file_offset.unwrap() as usize;
+    assert_eq!(&image[data_off..data_off + 0x40], &[0x22; 0x40][..]);
+
+    // Los formatos sin compresion y un NSO marcado como LZ4 pero almacenado se
+    // analizan sin copiar.
+    let elf = syn::elf_mips_le32();
+    assert!(matches!(image_data(&elf, Format::Elf).unwrap(), Cow::Borrowed(_)));
+    let plain = syn::nso_arm64(false);
+    assert!(matches!(image_data(&plain, Format::Nso).unwrap(), Cow::Borrowed(_)));
+    let stored = syn::nso_arm64(true);
+    assert!(matches!(image_data(&stored, Format::Nso).unwrap(), Cow::Borrowed(_)));
+
+    // Un bloque corrupto se rechaza (no panic).
+    let mut bad = bin;
+    bad[0x100..0x104].copy_from_slice(&0xFFFF_FFF0u32.to_le_bytes());
+    assert!(image_data(&bad, Format::Nso).is_err());
 }
 
 #[test]

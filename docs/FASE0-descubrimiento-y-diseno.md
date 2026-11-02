@@ -75,10 +75,10 @@ flowchart TB
   GH <--> DB
 ```
 
-**Estado tras la Fase 1:** implementados `Cargador` (ELF, DOL, PE, NSO),
-`Desensamblador` (Capstone) con detección recursiva de funciones y llamadas,
-`Proyecto SQLite` y `CLI` (init/load/analyze/info/export). El resto son carpetas
-con README.
+**Estado tras la Fase 1:** implementados `Cargador` (ELF, DOL, PE y NSO con
+LZ4), `Desensamblador` (Capstone) con detección recursiva de funciones y
+llamadas, `Proyecto SQLite` y `CLI` (init/load/analyze/info/export). El resto
+son carpetas con README.
 
 **Estado tras la Fase 2:** añadidos el documento bidireccional `re-1.0`
 (`export`/`updates`), los comandos `export --format re-json` y `apply`, la
@@ -99,7 +99,7 @@ capa de plataforma → TwinRun → documentación y métricas.
 
 | ID | Requisito | Prioridad | Estado |
 | --- | --- | --- | --- |
-| RF-01 | Cargar ELF, SELF/NSO, DOL, XEX, PE y ROM planas aportadas por el usuario | Alta | **Parcial** (ELF, DOL, PE, NSO, ROM plana; XEX reconocido sin cargador; SELF rechazado por diseño) |
+| RF-01 | Cargar ELF, SELF/NSO, DOL, XEX, PE y ROM planas aportadas por el usuario | Alta | **Parcial** (ELF, DOL, PE, NSO con LZ4, ROM plana; XEX reconocido sin cargador; SELF rechazado por diseño) |
 | RF-02 | Detectar arquitectura (MIPS, PPC, ARM, ARM64, x86-64, SPU) y endianness | Alta | **Hecho** (por cabeceras) |
 | RF-03 | Base de datos de funciones, símbolos, tipos y progreso | Alta | **Hecho** (esquema v1 + detección recursiva de funciones y llamadas) |
 | RF-04 | Proponer nombres con confianza y justificación | Alta | Fase 3 |

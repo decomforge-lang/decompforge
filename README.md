@@ -84,7 +84,7 @@ Códigos de salida: `0` ok · `1` error · `2` comando aún no implementado · `
 | ELF 32/64, LE/BE (MIPS, PPC, ARM, ARM64, x86, x86-64, SPU) | ✅ secciones o, si no hay, segmentos `PT_LOAD` |
 | DOL (GameCube/Wii) | ✅ detección por validación de cabecera |
 | PE/COFF (Windows, Xbox) | ✅ |
-| NSO0 (Switch) | 🟡 cabecera y mapa de memoria; descompresión LZ4 pendiente |
+| NSO0 (Switch) | ✅ cabecera, mapa de memoria y descompresión LZ4 por bloques |
 | ROM plana | ✅ con `--arch --endian --base` |
 | XEX | ⏳ reconocido, sin cargador |
 | ISO 9660, PFS0 | ⏳ reconocidos; son contenedores, no ejecutables |
@@ -94,6 +94,10 @@ Detección de funciones: MIPS, PowerPC, ARM, ARM64 y x86/x86-64
 ([ADR-010](docs/adr/ADR-010-capstone-y-deteccion-de-funciones.md)). El ELF de
 Cell **SPU** se puede cargar e inspeccionar con `load --no-analyze`, pero
 Capstone no lo desensambla: `analyze` devuelve un error explícito (código 4).
+
+Un NSO con segmentos LZ4 se analiza sobre una imagen materializada (archivo +
+segmentos descomprimidos); los `file_offset` de sus secciones se refieren a esa
+imagen ([ADR-013](docs/adr/ADR-013-imagen-materializada-nso.md)).
 
 ## Desarrollo
 

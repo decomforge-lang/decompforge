@@ -452,8 +452,9 @@ pub fn pe_x86_64() -> Vec<u8> {
 // ---------------------------------------------------------------- NSO
 
 /// NSO0 sintetico (Switch, ARM64). Con `compressed = true` marca los tres
-/// segmentos como comprimidos (los datos NO estan realmente comprimidos: solo
-/// sirve para probar la cabecera).
+/// segmentos como comprimidos, pero guarda los datos tal cual (`compressed_size
+/// == size`): sirve para comprobar que el cargador los trata como almacenados.
+/// Para probar LZ4 de verdad usa [`nso_arm64_lz4`].
 pub fn nso_arm64(compressed: bool) -> Vec<u8> {
     let mut w = W::new(false);
     w.bytes(b"NSO0");
@@ -481,6 +482,69 @@ pub fn nso_arm64(compressed: bool) -> Vec<u8> {
     w.bytes(&[0xC0, 0x03, 0x5F, 0xD6, 0, 0, 0, 0]); // ret
     w.bytes(&[0x11; 0x10]);
     w.bytes(&[0x22; 0x10]);
+    w.buf
+}
+
+/// NSO0 sintetico con los tres segmentos realmente comprimidos con LZ4.
+///
+/// `.text` ocupa 0x80 bytes (dos bloques de 0x40 para ejercitar el bucle),
+/// `.rodata` y `.data` 0x40 bytes cada uno. La cabecera de 0x100 bytes se
+/// conserva y los bloques se encadenan detras.
+pub fn nso_arm64_lz4() -> Vec<u8> {
+    let mut text = Vec::with_capacity(0x80);
+    // `ret` repetido en el primer bloque; un patron distinto en el segundo.
+    for _ in 0..16 {
+        text.extend_from_slice(&[0xC0, 0x03, 0x5F, 0xD6]);
+    }
+    for i in 0..0x40 {
+        text.push((i as u8).wrapping_mul(7));
+    }
+    let rodata: Vec<u8> = (0..0x40).map(|i| (i as u8 % 8).wrapping_add(0x40)).collect();
+    let data = vec![0x22u8; 0x40];
+
+    fn push_block(out: &mut Vec<u8>, raw: &[u8]) {
+        let compressed = lz4_flex::block::compress(raw);
+        out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        out.extend_from_slice(&compressed);
+    }
+
+    let mut text_blocks = Vec::new();
+    for chunk in text.chunks(0x40) {
+        push_block(&mut text_blocks, chunk);
+    }
+    let mut rodata_blocks = Vec::new();
+    push_block(&mut rodata_blocks, &rodata);
+    let mut data_blocks = Vec::new();
+    push_block(&mut data_blocks, &data);
+
+    let text_off = 0x100usize;
+    let rodata_off = text_off + text_blocks.len();
+    let data_off = rodata_off + rodata_blocks.len();
+
+    let mut w = W::new(false);
+    w.bytes(b"NSO0");
+    w.u32(0); // version
+    w.u32(0); // reservado
+    w.u32(0b111); // los tres segmentos comprimidos
+    w.pad_to(0x100);
+    let put = |w: &mut W, off: usize, v: u32| w.set_u32(off, v);
+    put(&mut w, 0x10, text_off as u32);
+    put(&mut w, 0x14, 0x0);
+    put(&mut w, 0x18, text.len() as u32);
+    put(&mut w, 0x20, rodata_off as u32);
+    put(&mut w, 0x24, 0x1000);
+    put(&mut w, 0x28, rodata.len() as u32);
+    put(&mut w, 0x30, data_off as u32);
+    put(&mut w, 0x34, 0x2000);
+    put(&mut w, 0x38, data.len() as u32);
+    put(&mut w, 0x3C, 0x100); // bss
+    put(&mut w, 0x60, text_blocks.len() as u32);
+    put(&mut w, 0x64, rodata_blocks.len() as u32);
+    put(&mut w, 0x68, data_blocks.len() as u32);
+    w.bytes(&text_blocks);
+    w.bytes(&rodata_blocks);
+    w.bytes(&data_blocks);
     w.buf
 }
 

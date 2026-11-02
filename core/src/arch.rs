@@ -146,3 +146,22 @@ impl fmt::Display for Format {
         f.write_str(self.as_str())
     }
 }
+
+impl FromStr for Format {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "elf" => Ok(Format::Elf),
+            "dol" => Ok(Format::Dol),
+            "pe" => Ok(Format::Pe),
+            "nso" => Ok(Format::Nso),
+            "self" => Ok(Format::Self_),
+            "xex" => Ok(Format::Xex),
+            "iso" => Ok(Format::Iso),
+            "flat" => Ok(Format::Flat),
+            other => {
+                Err(format!("formato desconocido: '{other}' (elf|dol|pe|nso|self|xex|iso|flat)"))
+            }
+        }
+    }
+}

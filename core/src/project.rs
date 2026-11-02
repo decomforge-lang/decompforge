@@ -2,7 +2,7 @@
 //! trabajo (secciones, simbolos, funciones, tipos, auditoria).
 
 use crate::analysis::{self, AnalysisOptions, AnalysisSummary, Image};
-use crate::arch::{Arch, Endian};
+use crate::arch::{Arch, Endian, Format};
 use crate::db;
 use crate::error::{Error, Result};
 use crate::loader::{self, LoadOptions, LoadedBinary, Section};
@@ -27,7 +27,8 @@ pub struct Project {
 }
 
 /// Campos de `project` necesarios para reanalizar sin guardar el binario.
-type BinaryState = (Option<String>, Option<String>, Option<i64>, Option<i64>, Option<String>);
+type BinaryState =
+    (Option<String>, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>);
 
 /// Resumen del estado del proyecto para `decompforge info`.
 #[derive(Debug, Clone, Serialize)]
@@ -344,11 +345,13 @@ impl Project {
     /// conserva nombres, estados y hashes de las funciones existentes y
     /// regenera solo las aristas de llamada de las funciones analizadas.
     pub fn analyze(&mut self, data: &[u8], actor: &str) -> Result<AnalysisSummary> {
-        let (arch_text, endian_text, bits, entry, expected): BinaryState = self.conn.query_row(
-            "SELECT architecture, endian, bits, entry, binary_sha256 FROM project WHERE id = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-        )?;
+        let (arch_text, endian_text, bits, entry, expected, format_text): BinaryState =
+            self.conn.query_row(
+                "SELECT architecture, endian, bits, entry, binary_sha256, format
+                 FROM project WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )?;
         let Some(expected) = expected else {
             return Err(Error::Project(
                 "no hay binario cargado; usa `decompforge load <binario>` primero".into(),
@@ -384,6 +387,11 @@ impl Project {
             None => return Err(Error::Analysis("el proyecto no indica el numero de bits".into())),
         };
         let entry = entry.and_then(|e| u64::try_from(e).ok());
+        let format = format_text
+            .as_deref()
+            .unwrap_or_default()
+            .parse::<Format>()
+            .map_err(|e| Error::Analysis(format!("formato del proyecto: {e}")))?;
 
         let mut sections = Vec::new();
         {
@@ -403,7 +411,10 @@ impl Project {
             }
         }
 
-        let image = Image::from_sections(data, &sections);
+        // Un NSO comprimido se analiza sobre la imagen materializada; el resto
+        // de formatos usan el archivo tal cual.
+        let image_data = loader::image_data(data, format)?;
+        let image = Image::from_sections(&image_data, &sections);
         let mut seeds: BTreeSet<u64> = BTreeSet::new();
         if let Some(e) = entry {
             if image.is_executable(e) {

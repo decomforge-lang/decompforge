@@ -433,4 +433,71 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
 2. CFG y *ownership* de instrucciones, incluido el *delay slot* MIPS.
 3. Fase 3: NameForge (nombres con confianza y justificación).
 
+## 2026-11-02 · Sesión 7 — Descompresión NSO (LZ4)
+
+### Punto de partida
+- El cargador NSO solo leía la cabecera y el mapa de memoria. En un NSO con
+  segmentos comprimidos, el análisis desensamblaba los bytes LZ4 como si fueran
+  código: los binarios reales de Switch no se podían analizar.
+- `Image` traduce dirección virtual a offset de archivo y no debía aprender
+  LZ4; el proyecto tampoco guarda el binario (ADR-009) y el SHA-256 verificado
+  al reanalizar es el del archivo que aporta el usuario.
+
+### Hecho
+
+**Cargador (`core/src/loader/nso.rs`)**
+- Parseo completo de la cabecera: offsets y tamaños de `.text`, `.rodata` y
+  `.data`, `flags` de compresión, tamaños comprimidos en `0x60`/`0x64`/`0x68`
+  y tamaño de `.bss`.
+- Descompresión LZ4 por bloques (`u32 csize; u32 dsize; datos`) con
+  `lz4_flex`. Un segmento se trata como almacenado si `csize == 0` o
+  `csize >= size`. Se validan cabeceras de bloque, truncamientos, relleno final
+  y que la suma de bloques coincida exactamente con el tamaño declarado.
+- Imagen materializada (ADR-013): el archivo original seguido de los segmentos
+  descomprimidos en orden `.text`, `.rodata`, `.data`. `Section::file_offset`
+  apunta a esa imagen solo en NSO realmente comprimido.
+- Límite de 2 GiB y reservas con `try_reserve`: una cabecera hostil produce
+  `Error::Malformed`, nunca un *panic* ni un agotamiento de memoria.
+
+**Análisis y API**
+- `loader::image_data(data, format) -> Cow<[u8]>`: `Borrowed` para el resto de
+  formatos y para NSO sin compresión; `Owned` para NSO con LZ4.
+- `Project::analyze` guarda el formato en el estado que ya consultaba y
+  construye `Image` sobre `image_data`, no sobre el archivo crudo.
+- `impl FromStr for Format` para leer el formato persistido y rechazarlo con un
+  mensaje claro si no se reconoce.
+
+**Pruebas**
+- `synthetic::nso_arm64_lz4()`: tres segmentos comprimidos de verdad; `.text`
+  ocupa `0x80` bytes en dos bloques de `0x40` para ejercitar el bucle.
+- `core/tests/loaders.rs`: offsets de la imagen, contenido descomprimido,
+  `Cow::Borrowed` para ELF y rechazo de bloques corruptos.
+- `core/tests/analysis.rs`: un NSO comprimido se analiza sobre la imagen (la
+  primera función es el `ret` descomprimido, no la cabecera del bloque).
+- Pruebas unitarias de `nso.rs`: magic ausente y tamaños de bloque imposibles.
+
+### Verificación
+- `scripts/check.ps1`: **Todo OK** (formato, Clippy, documentación, 60 pruebas
+  Rust, 25 pruebas del cliente Python y ciclo exportar → validar).
+- `scripts/coverage.ps1`: **90,66 % de líneas**, 88,59 % de regiones y 87,33 % de
+  funciones en `decompforge-core` (RNF-06: ≥ 80 %). `loader/nso.rs` queda en
+  77,67 % de líneas: los caminos de error restantes se cubren en las pruebas de
+  integración de `loader`.
+- Documentación actualizada: README, estado de la Fase 1/RF-01 y ADR-013.
+
+### Limitaciones conocidas (sin maquillar)
+- **NSO real**: la descompresión se ha probado con NSO sintéticos, no con un
+  ejecutable real de Switch aportado por el usuario.
+- **Offsets del export**: en un NSO comprimido, `file_offset` se refiere a la
+  imagen materializada, no al archivo original; el proyecto no guarda esa
+  imagen.
+- **Límite de 2 GiB**: política del proyecto; un NSO legítimo mayor se rechaza
+  con un mensaje explícito.
+- Siguen en pie las limitaciones de la sesión 6 (macOS sin equipo real, Ghidra
+  solo 12.2, Documento Maestro versionado).
+
+### Siguiente
+1. CFG y *ownership* de instrucciones, incluido el *delay slot* MIPS.
+2. Fase 3: NameForge (nombres con confianza y justificación).
+
 ---

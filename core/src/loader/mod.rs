@@ -16,6 +16,7 @@ pub use reader::Reader;
 use crate::arch::{Arch, Endian, Format};
 use crate::error::{Error, Result};
 use serde::Serialize;
+use std::borrow::Cow;
 
 /// Una region de memoria del binario cargado.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -29,6 +30,9 @@ pub struct Section {
     /// Permisos en forma `rwx` (con `-` para los ausentes).
     pub perms: String,
     /// Posicion en el archivo; `None` para regiones sin datos (bss).
+    ///
+    /// En un NSO comprimido apunta a [`image_data`]: la imagen materializada
+    /// (archivo + segmentos descomprimidos), no al archivo original.
     pub file_offset: Option<u64>,
 }
 
@@ -136,6 +140,22 @@ pub fn load(data: &[u8], opts: &LoadOptions) -> Result<LoadedBinary> {
                    (p. ej. el ELF principal) y cargalo directamente."
                 .into(),
         }),
+    }
+}
+
+/// Devuelve los bytes que deben analizarse para `format`.
+///
+/// La mayoria de formatos se analizan directamente desde el archivo
+/// (`Cow::Borrowed`). Un NSO con segmentos LZ4 necesita una imagen
+/// materializada (`Cow::Owned`); sus secciones ya guardan los offsets de esa
+/// imagen (ADR-013).
+pub fn image_data<'a>(data: &'a [u8], format: Format) -> Result<Cow<'a, [u8]>> {
+    match format {
+        Format::Nso => match nso::materialize(data)? {
+            Some(image) => Ok(Cow::Owned(image)),
+            None => Ok(Cow::Borrowed(data)),
+        },
+        _ => Ok(Cow::Borrowed(data)),
     }
 }
 

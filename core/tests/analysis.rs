@@ -76,6 +76,17 @@ fn x86_64_recursive_detection() {
 }
 
 #[test]
+fn nso_lz4_is_analyzed_over_the_materialized_image() {
+    let bin = syn::nso_arm64_lz4();
+    let mut p = loaded(&bin, "switch");
+    let s = p.analyze(&bin, "tester").unwrap();
+    // La imagen descomprimida empieza con `ret`: una funcion de 4 bytes. Sin
+    // descompresion, esos bytes serian la cabecera del bloque LZ4.
+    assert_eq!((s.functions, s.instructions), (1, 1));
+    assert_eq!(functions(&p), [(0x0, 4)]);
+}
+
+#[test]
 fn reanalysis_is_idempotent_and_preserves_user_work() {
     let bin = syn::elf_mips_le32_program();
     let mut p = loaded(&bin, "ps2");
