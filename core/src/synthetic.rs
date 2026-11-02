@@ -229,6 +229,48 @@ pub fn elf_mips_le32_program() -> Vec<u8> {
     })
 }
 
+/// ELF MIPS LE32 con dos funciones y cadenas propias en `.rodata`. Sirve para
+/// ejercitar NameForge con evidencia textual, sin referencias reales.
+///
+/// `main` (0x00100000) llama a `f1` (0x00100020). Las cadenas viven en una
+/// seccion de solo lectura que `collect_strings` escanea.
+pub fn elf_mips_le32_strings() -> Vec<u8> {
+    let code = words(
+        false,
+        &[
+            0x27BD_FFF8, // addiu sp,sp,-8
+            0x0C04_0008, // jal 0x00100020
+            0x0000_0000, // nop (delay slot)
+            0x03E0_0008, // jr ra
+            0x0000_0000, // nop (delay slot)
+            0x0000_0000, // relleno hasta 0x00100020
+            0x0000_0000,
+            0x2508_0001, // addiu t0,t0,1
+            0x03E0_0008, // jr ra
+            0x0000_0000, // nop (delay slot)
+        ],
+    );
+    let mut sections = sample_sections(&code, 0x0010_0000, 0x0020_0000);
+    sections.insert(
+        1,
+        ElfSection {
+            name: ".rodata",
+            addr: 0x0018_0000,
+            flags: 2,
+            data: b"player_speed\0game_update\0\0".to_vec(),
+            nobits_size: None,
+        },
+    );
+    build_elf(&ElfSpec {
+        is64: false,
+        big: false,
+        machine: 8,
+        e_flags: 0x20,
+        entry: 0x0010_0000,
+        sections,
+    })
+}
+
 /// ELF PowerPC BE32 con tres funciones y dos `bl` directos.
 pub fn elf_ppc_be32_program() -> Vec<u8> {
     let code = words(

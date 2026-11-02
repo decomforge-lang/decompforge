@@ -4,6 +4,8 @@
 //! * [`analysis`]: desensamblado con Capstone y deteccion recursiva de
 //!   funciones y llamadas.
 //! * [`project`]: proyecto SQLite, importacion y exportacion JSON.
+//! * [`nameforge`]: propuestas de nombres con confianza y justificacion
+//!   (RF-04), con contexto acotado y proveedores intercambiables.
 //! * [`synthetic`]: binarios sinteticos propios para pruebas y demos
 //!   (nunca contenido de terceros; ver docs/ACCEPTABLE_USE.md).
 //!
@@ -38,6 +40,7 @@ pub mod arch;
 pub mod db;
 pub mod error;
 pub mod loader;
+pub mod nameforge;
 pub mod project;
 pub mod synthetic;
 mod timeutil;
@@ -45,4 +48,4 @@ mod timeutil;
 pub use arch::{Arch, Endian, Format};
 pub use error::{Error, Result};
 pub use loader::{FlatSpec, LoadOptions, LoadedBinary, Section};
-pub use project::{Project, ProjectInfo};
+pub use project::{Project, ProjectInfo, SuggestOptions};

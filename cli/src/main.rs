@@ -4,9 +4,11 @@
 //! documentados se reconocen y explican en que fase llegaran.
 
 use decompforge_core::analysis::AnalysisSummary;
+use decompforge_core::nameforge::{NameForgeConfig, SuggestionBatch};
 use decompforge_core::synthetic;
-use decompforge_core::{Arch, Endian, Error, FlatSpec, LoadOptions, Project};
+use decompforge_core::{Arch, Endian, Error, FlatSpec, LoadOptions, Project, SuggestOptions};
 use std::collections::HashMap;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -38,8 +40,19 @@ COMANDOS (Fase 1):
   apply <updates.json> [--project F]
         Aplica nombres, firmas y comentarios de un documento re-1.0 de tipo
         `updates` (todo o nada).
+  name <binario> [--project F] [--config F] [--batch] [--limit N] [--function ADDR]
+        NameForge: propone hasta 3 nombres con confianza y justificacion.
+        Sin --batch exige --function y pregunta cual aceptar (modo interactivo).
+        Con --batch revisa todas las funciones sin nombre (o las indicadas).
+  name list [--project F] [--state pending|accepted|rejected|all] [--function ADDR] [--json]
+        Lista las propuestas guardadas (por defecto, pendientes).
+  name accept <id> [--project F] [--force]
+  name reject <id> [--project F]
+        Acepta (aplica el nombre) o rechaza una propuesta pendiente.
+  name config [--output F]
+        Muestra o escribe la configuracion de estilo y proveedor por defecto.
 
-COMANDOS PLANIFICADOS: name, match, recomp, lint, verify, report
+COMANDOS PLANIFICADOS: match, recomp, lint, verify, report
 
 Si no indicas --project se usa el unico *.dfproj del directorio actual.
 DecompForge no descifra ni elude protecciones: ver docs/ACCEPTABLE_USE.md.
@@ -277,6 +290,12 @@ fn cmd_info(raw: &[String]) -> CliResult<()> {
     println!("funciones:      {}", i.functions);
     println!("bloques:        {}", i.basic_blocks);
     println!("aristas CFG:    {}", i.cfg_edges);
+    if i.name_suggestions > 0 {
+        println!(
+            "propuestas:     {} ({} pendientes)",
+            i.name_suggestions, i.name_suggestions_pending
+        );
+    }
     for (state, n) in &i.functions_by_state {
         println!("  {state:<11} {n}");
     }
@@ -328,6 +347,185 @@ fn cmd_apply(raw: &[String]) -> CliResult<()> {
     Ok(())
 }
 
+fn cmd_name(raw: &[String]) -> CliResult<()> {
+    let a = Args::parse(
+        raw,
+        &["project", "config", "function", "limit", "state", "output"],
+        &["batch", "force", "json"],
+    )?;
+    let sub = a.positional.first().map(String::as_str);
+    match sub {
+        Some("list") => return cmd_name_list(&a),
+        Some("accept") => return cmd_name_decide(&a, true),
+        Some("reject") => return cmd_name_decide(&a, false),
+        Some("config") => return cmd_name_config(&a),
+        _ => {}
+    }
+
+    let Some(bin_path) = a.positional.first() else {
+        return fail(
+            "uso: decompforge name <binario> [--project F] [--config F] [--batch] \
+             [--limit N] [--function ADDR]",
+        );
+    };
+    let config = match a.value("config") {
+        Some(p) => NameForgeConfig::load(Path::new(p))?,
+        None => NameForgeConfig::default(),
+    };
+    let data = std::fs::read(bin_path)?;
+    let mut project = Project::open(&project_path(&a)?)?;
+    let user = current_user();
+
+    let addresses = match a.value("function") {
+        Some(s) => vec![parse_addr(s)?],
+        None => Vec::new(),
+    };
+    let limit = match a.value("limit") {
+        Some(s) => s.parse::<usize>().or_else(|_| fail(format!("limite invalido: '{s}'")))?,
+        None => 0,
+    };
+    let options = SuggestOptions { addresses, limit };
+
+    let interactive = !a.flag("batch");
+    if interactive && options.addresses.len() != 1 {
+        return fail(
+            "el modo interactivo necesita --function ADDR; usa --batch para todas las funciones",
+        );
+    }
+
+    let batch = project.suggest_names(&data, &config, &options, &user)?;
+    if a.flag("json") {
+        println!("{}", serde_json::to_string_pretty(&batch)?);
+        return Ok(());
+    }
+
+    println!(
+        "nameforge: {} funciones, {} propuestas, {} descartadas",
+        batch.functions, batch.suggestions, batch.discarded
+    );
+    for w in &batch.warnings {
+        println!("aviso: {w}");
+    }
+    for r in &batch.records {
+        println!(
+            "  {:>4}  0x{:08x}  {:<30} {:>5.2}  {}",
+            r.id, r.function, r.name, r.confidence, r.reason
+        );
+    }
+
+    if interactive && !batch.records.is_empty() {
+        interactive_review(&mut project, &batch, a.flag("force"))?;
+    }
+    Ok(())
+}
+
+fn cmd_name_list(a: &Args) -> CliResult<()> {
+    let p = Project::open(&project_path(a)?)?;
+    let function = match a.value("function") {
+        Some(s) => Some(parse_addr(s)?),
+        None => None,
+    };
+    let rows = p.suggestions(function, a.value("state"))?;
+    if a.flag("json") {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("sin propuestas");
+        return Ok(());
+    }
+    println!(
+        "{:<5} {:<10} {:<30} {:>5}  {:<8} motivo",
+        "id", "funcion", "nombre", "conf", "estado"
+    );
+    for r in &rows {
+        println!(
+            "{:<5} 0x{:08x} {:<30} {:>5.2}  {:<8} {}",
+            r.id, r.function, r.name, r.confidence, r.state, r.reason
+        );
+    }
+    Ok(())
+}
+
+fn cmd_name_decide(a: &Args, accept: bool) -> CliResult<()> {
+    let Some(id_text) = a.positional.get(1) else {
+        return fail(if accept {
+            "uso: decompforge name accept <id> [--project F] [--force]"
+        } else {
+            "uso: decompforge name reject <id> [--project F]"
+        });
+    };
+    let id: i64 = id_text.parse().or_else(|_| fail(format!("id invalido: '{id_text}'")))?;
+    let mut project = Project::open(&project_path(a)?)?;
+    let user = current_user();
+    let r = if accept {
+        project.accept_suggestion(id, a.flag("force"), &user)?
+    } else {
+        project.reject_suggestion(id, &user)?
+    };
+    println!(
+        "{} {}: 0x{:08x} -> {} (confianza {:.2})",
+        if accept { "aceptada" } else { "rechazada" },
+        r.id,
+        r.function,
+        r.name,
+        r.confidence
+    );
+    Ok(())
+}
+
+fn cmd_name_config(a: &Args) -> CliResult<()> {
+    let config = NameForgeConfig::default();
+    let text = serde_json::to_string_pretty(&config)? + "\n";
+    match a.value("output") {
+        Some(out) => {
+            std::fs::write(out, &text)?;
+            println!("configuracion escrita en {out}");
+        }
+        None => print!("{text}"),
+    }
+    Ok(())
+}
+
+fn interactive_review(
+    project: &mut Project,
+    batch: &SuggestionBatch,
+    force: bool,
+) -> CliResult<()> {
+    println!(
+        "revision interactiva: enter = omitir, r = rechazar todas, numero = aceptar, f = aceptar con force"
+    );
+    for (i, r) in batch.records.iter().enumerate() {
+        println!("  [{}] {:<30} {:>5.2}  {}", i + 1, r.name, r.confidence, r.reason);
+    }
+    print!("opcion: ");
+    io::stdout().flush()?;
+    let mut line = String::new();
+    if io::stdin().read_line(&mut line)? == 0 {
+        return Ok(());
+    }
+    let choice = line.trim();
+    let user = current_user();
+    if choice.eq_ignore_ascii_case("r") {
+        for r in &batch.records {
+            project.reject_suggestion(r.id, &user)?;
+        }
+        println!("rechazadas {} propuestas", batch.records.len());
+    } else if let Ok(n) = choice.parse::<usize>() {
+        if n >= 1 && n <= batch.records.len() {
+            let r = project.accept_suggestion(batch.records[n - 1].id, force, &user)?;
+            println!("aceptada {}: 0x{:08x} -> {}", r.id, r.function, r.name);
+        } else {
+            println!("opcion fuera de rango; no se acepto nada");
+        }
+    } else if choice.is_empty() {
+        println!("omitido; las propuestas quedan pendientes");
+    } else {
+        println!("opcion no valida; no se acepto nada");
+    }
+    Ok(())
+}
+
 fn planned(cmd: &str) -> Option<&'static str> {
     Some(match cmd {
         "name" => "Fase 3 (NameForge)",
@@ -361,6 +559,7 @@ fn run(args: Vec<String>) -> CliResult<()> {
         "info" => cmd_info(rest),
         "export" => cmd_export(rest),
         "apply" => cmd_apply(rest),
+        "name" => cmd_name(rest),
         other => match planned(other) {
             Some(phase) => Err(CliError {
                 msg: format!("el comando '{other}' aun no esta implementado (llegara en {phase})"),

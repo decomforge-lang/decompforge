@@ -585,6 +585,62 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
 
 ### Siguiente
 1. Publicar el hito (commit, push y comprobación del CI en los tres sistemas).
-2. Fase 3: NameForge (nombres con confianza y justificación).
+2. Fase 4: MatchLoop (bucle de matching con toolchain fijado).
 
 ---
+
+## 2026-11-02 · Sesión 9 — NameForge (nombres con confianza y justificación)
+
+### Punto de partida
+- La Fase 2 estaba cerrada y publicada; el hito CFG (Sesión 8) estaba
+  subido. Faltaba la Fase 3: el motor de nombrado con IA.
+- El esquema `ai_suggestion` existía desde v1 pero sin justificación ni orden
+  ni fecha de decisión.
+
+### Hecho
+
+**Núcleo (`core/src/nameforge/`)**
+- `mod.rs`: `NameCase`, `StyleConfig` (case, prefix, banned, max_length),
+  `NameForgeConfig` (estilo + proveedor), `NameSuggestion`, `SuggestionRecord`,
+  `SuggestionBatch`, `NameProvider`, `propose`, `validate_suggestions`,
+  `ProviderConfig` (heurístico o comando externo con `stdin`/`stdout`).
+- `context.rs`: `FunctionContext` acotado (200 instrucciones, 5 llamadores,
+  5 llamados, 16 cadenas, 24 constantes, 5 ejemplos), `collect_strings` y
+  `build_context` a partir de la base de datos y la imagen materializada.
+- `heuristic.rs`: proveedor local determinista (cadenas identificadoras y
+  frases, envoltorio de una función pequeña que llama a una sola nombrada);
+  sin evidencia devuelve lista vacía.
+
+**Persistencia**
+- Migración SQLite v4: `ai_suggestion` gana `reason`, `seq` y `decided_at`, más
+  índice por función y estado. `SCHEMA_VERSION = 4`.
+- `Project::suggest_names`, `suggestions`, `accept_suggestion`,
+  `reject_suggestion`; `analysis_env` factorizado desde `analyze`.
+- Aceptar una propuesta sobre una función ya nombrada exige `--force`.
+
+**CLI (`decompforge name`)**
+- `name <binario> [--batch] [--function ADDR] [--limit N] [--config F]`
+  (batch e interactivo), `name list`, `name accept <id>`, `name reject <id>`,
+  `name config`. `info` muestra el contador de propuestas.
+
+**Servicio Python (`ai/nameforge`)**
+- Heurístico y proveedor OpenAI-compatible por `urllib` (sin dependencias), con
+  validación equivalente a la del núcleo y pruebas `unittest` (10).
+
+**Pruebas y cobertura**
+- 4 pruebas de integración en `core/tests/nameforge.rs` (sugerir, aceptar y
+  rechazar, `--force`, migración v4) y 2 pruebas de CLI.
+- `cargo test --workspace`: 4 + 16 + 13 + 15 + 14 + 4 + 1 + 1 (doctest) = 68.
+- `scripts/check.ps1`: Todo OK (incluye las 10 pruebas Python de NameForge).
+- Cobertura: **86,09 % de líneas** (RNF-06: ≥ 80 %).
+
+### Limitaciones conocidas (sin maquillar)
+- La heurística es conservadora y no propone sin evidencia textual.
+- El proveedor externo puede fallar o ser lento; el lote se detiene en ese caso.
+- El estilo se configura por archivo; no se aprende automáticamente.
+- Solo se ha probado con binarios sintéticos.
+- El servicio Python no se empaqueta ni se instala automáticamente.
+
+### Siguiente
+1. Publicar el hito (commit, push y comprobación del CI en los tres sistemas).
+2. Fase 4: MatchLoop (bucle de matching con toolchain fijado).

@@ -1,11 +1,12 @@
 //! Proyecto de DecompForge: un archivo SQLite con el estado verdadero del
 //! trabajo (secciones, simbolos, funciones, tipos, auditoria).
 
-use crate::analysis::{self, AnalysisOptions, AnalysisSummary, Image};
+use crate::analysis::{self, AnalysisOptions, AnalysisSummary, Disassembler, Image};
 use crate::arch::{Arch, Endian, Format};
 use crate::db;
 use crate::error::{Error, Result};
 use crate::loader::{self, LoadOptions, LoadedBinary, Section};
+use crate::nameforge::{self, NameForgeConfig, SuggestionBatch, SuggestionRecord};
 use crate::timeutil::now_iso;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -29,6 +30,44 @@ pub struct Project {
 /// Campos de `project` necesarios para reanalizar sin guardar el binario.
 type BinaryState =
     (Option<String>, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>);
+
+/// Entorno derivado del binario cargado que comparten el analisis y NameForge.
+struct AnalysisEnv {
+    /// Archivo original o imagen materializada (NSO con LZ4).
+    image_data: Vec<u8>,
+    sections: Vec<Section>,
+    arch: Arch,
+    endian: Endian,
+    bits: u8,
+    entry: Option<u64>,
+}
+
+/// Propuesta y funcion asociada, antes de aceptar o rechazar.
+struct SuggestionDecision {
+    status: String,
+    name: String,
+    confidence: f64,
+    reason: String,
+    seq: u8,
+    created_at: String,
+    function_id: i64,
+    address: u64,
+    function_name: Option<String>,
+}
+
+fn suggestion_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SuggestionRecord> {
+    Ok(SuggestionRecord {
+        id: r.get(0)?,
+        function: r.get::<_, i64>(1)? as u64,
+        name: r.get(2)?,
+        confidence: r.get(3)?,
+        reason: r.get(4)?,
+        state: r.get(5)?,
+        seq: r.get::<_, i64>(6)? as u8,
+        created_at: r.get(7)?,
+        decided_at: r.get(8)?,
+    })
+}
 
 /// Resumen del estado del proyecto para `decompforge info`.
 #[derive(Debug, Clone, Serialize)]
@@ -65,6 +104,20 @@ pub struct ProjectInfo {
     pub cfg_edges: u64,
     /// Numero de funciones por estado (detected, named, ...).
     pub functions_by_state: BTreeMap<String, u64>,
+    /// Propuestas de nombre registradas (cualquier estado).
+    pub name_suggestions: u64,
+    /// Propuestas de nombre pendientes de revision.
+    pub name_suggestions_pending: u64,
+}
+
+/// Seleccion de funciones para una tanda de NameForge.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SuggestOptions {
+    /// Funciones concretas. Si esta vacio se proponen todas las que aun no
+    /// tienen nombre aprobado, en orden de direccion.
+    pub addresses: Vec<u64>,
+    /// Maximo de funciones a procesar; `0` significa sin limite.
+    pub limit: usize,
 }
 
 /// Resultado de aplicar un documento `re-1.0` de tipo `updates`.
@@ -342,13 +395,10 @@ impl Project {
         Ok(bin)
     }
 
-    /// Analiza el binario aportado y persiste funciones y llamadas.
-    ///
-    /// El proyecto no guarda el binario (ADR-009): hay que volver a aportarlo y
-    /// su SHA-256 debe coincidir con el cargado. La reejecucion es idempotente:
-    /// conserva nombres, estados y hashes de las funciones existentes y
-    /// regenera solo las aristas de llamada de las funciones analizadas.
-    pub fn analyze(&mut self, data: &[u8], actor: &str) -> Result<AnalysisSummary> {
+    /// Valida el binario aportado y prepara la imagen que usan las tareas de
+    /// analisis. El proyecto no guarda el binario (ADR-009), asi que el SHA-256
+    /// evita analizar un archivo distinto al importado.
+    fn analysis_env(&self, data: &[u8]) -> Result<AnalysisEnv> {
         let (arch_text, endian_text, bits, entry, expected, format_text): BinaryState =
             self.conn.query_row(
                 "SELECT architecture, endian, bits, entry, binary_sha256, format
@@ -417,10 +467,21 @@ impl Project {
 
         // Un NSO comprimido se analiza sobre la imagen materializada; el resto
         // de formatos usan el archivo tal cual.
-        let image_data = loader::image_data(data, format)?;
-        let image = Image::from_sections(&image_data, &sections);
+        let image_data = loader::image_data(data, format)?.into_owned();
+        Ok(AnalysisEnv { image_data, sections, arch, endian, bits, entry })
+    }
+
+    /// Analiza el binario aportado y persiste funciones y llamadas.
+    ///
+    /// El proyecto no guarda el binario (ADR-009): hay que volver a aportarlo y
+    /// su SHA-256 debe coincidir con el cargado. La reejecucion es idempotente:
+    /// conserva nombres, estados y hashes de las funciones existentes y
+    /// regenera solo las aristas de llamada de las funciones analizadas.
+    pub fn analyze(&mut self, data: &[u8], actor: &str) -> Result<AnalysisSummary> {
+        let env = self.analysis_env(data)?;
+        let image = Image::from_sections(&env.image_data, &env.sections);
         let mut seeds: BTreeSet<u64> = BTreeSet::new();
-        if let Some(e) = entry {
+        if let Some(e) = env.entry {
             if image.is_executable(e) {
                 seeds.insert(e);
             }
@@ -452,8 +513,14 @@ impl Project {
         }
 
         let seed_list: Vec<u64> = seeds.into_iter().collect();
-        let result =
-            analysis::analyze(&image, arch, endian, bits, &seed_list, &AnalysisOptions::default())?;
+        let result = analysis::analyze(
+            &image,
+            env.arch,
+            env.endian,
+            env.bits,
+            &seed_list,
+            &AnalysisOptions::default(),
+        )?;
 
         let tx = self.conn.transaction()?;
         let now = now_iso();
@@ -548,6 +615,8 @@ impl Project {
                     basic_blocks: 0,
                     cfg_edges: 0,
                     functions_by_state: BTreeMap::new(),
+                    name_suggestions: 0,
+                    name_suggestions_pending: 0,
                 })
             },
         )?;
@@ -556,6 +625,12 @@ impl Project {
         info.functions = count("function")?;
         info.basic_blocks = count("basic_block")?;
         info.cfg_edges = count("cfg_edge")?;
+        info.name_suggestions = count("ai_suggestion")?;
+        info.name_suggestions_pending = self.conn.query_row(
+            "SELECT COUNT(*) FROM ai_suggestion WHERE kind = 'name' AND status = 'pending'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )? as u64;
         let mut st = self.conn.prepare("SELECT state, COUNT(*) FROM function GROUP BY state")?;
         let rows =
             st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
@@ -580,6 +655,334 @@ impl Project {
                 |r| r.get::<_, i64>(0).map(|v| v as u64),
             )
             .optional()?)
+    }
+
+    /// Genera propuestas de nombre y las guarda como pendientes.
+    ///
+    /// Requiere el mismo binario importado (SHA-256). Si `options.addresses`
+    /// esta vacio se procesan las funciones sin nombre aprobado, en orden de
+    /// direccion. Las propuestas pendientes anteriores de cada funcion se
+    /// reemplazan; el historial aceptado y rechazado se conserva.
+    pub fn suggest_names(
+        &mut self,
+        data: &[u8],
+        config: &NameForgeConfig,
+        options: &SuggestOptions,
+        actor: &str,
+    ) -> Result<SuggestionBatch> {
+        config.validate()?;
+        let env = self.analysis_env(data)?;
+        let image = Image::from_sections(&env.image_data, &env.sections);
+        let dis = Disassembler::new(env.arch, env.endian, env.bits)?;
+        let strings = nameforge::collect_strings(&image);
+        let examples = self.named_example_names()?;
+
+        let targets = self.suggest_targets(options)?;
+        let mut pending: Vec<(i64, u64, nameforge::NameSuggestion, u8)> = Vec::new();
+        let mut batch = SuggestionBatch {
+            functions: 0,
+            suggestions: 0,
+            discarded: 0,
+            warnings: Vec::new(),
+            records: Vec::new(),
+        };
+        for &(function_id, address) in &targets {
+            batch.functions += 1;
+            let context = nameforge::build_context(
+                &self.conn, &image, &dis, &strings, &examples, address, config,
+            )?;
+            let suggestions = nameforge::propose(config, &context)?;
+            let (valid, warnings) = nameforge::validate_suggestions(suggestions, &config.style);
+            batch.discarded += warnings.len() as u64;
+            batch.warnings.extend(warnings.into_iter().map(|w| format!("0x{address:08x}: {w}")));
+            for (seq, suggestion) in valid.into_iter().enumerate() {
+                pending.push((function_id, address, suggestion, seq as u8));
+            }
+        }
+
+        let now = now_iso();
+        let tx = self.conn.transaction()?;
+        // Solo se reemplazan las propuestas pendientes: aceptadas y rechazadas
+        // forman el historial que alimenta la revision.
+        let mut cleared = BTreeSet::new();
+        for &(function_id, _, _, _) in &pending {
+            if cleared.insert(function_id) {
+                tx.execute(
+                    "DELETE FROM ai_suggestion
+                     WHERE function_id = ?1 AND kind = 'name' AND status = 'pending'",
+                    params![function_id],
+                )?;
+            }
+        }
+        for (function_id, _) in &targets {
+            if cleared.insert(*function_id) {
+                tx.execute(
+                    "DELETE FROM ai_suggestion
+                     WHERE function_id = ?1 AND kind = 'name' AND status = 'pending'",
+                    params![function_id],
+                )?;
+            }
+        }
+        for (function_id, address, suggestion, seq) in pending {
+            tx.execute(
+                "INSERT INTO ai_suggestion
+                     (function_id, kind, proposal, confidence, status, created_at, reason, seq)
+                 VALUES (?1, 'name', ?2, ?3, 'pending', ?4, ?5, ?6)",
+                params![
+                    function_id,
+                    suggestion.name,
+                    suggestion.confidence,
+                    now,
+                    suggestion.reason,
+                    seq as i64
+                ],
+            )?;
+            batch.suggestions += 1;
+            batch.records.push(SuggestionRecord {
+                id: tx.last_insert_rowid(),
+                function: address,
+                name: suggestion.name,
+                confidence: suggestion.confidence,
+                reason: suggestion.reason,
+                state: "pending".into(),
+                seq,
+                created_at: now.clone(),
+                decided_at: None,
+            });
+        }
+        let provider = match config.provider {
+            nameforge::ProviderConfig::Heuristic => "heuristic",
+            nameforge::ProviderConfig::Command { .. } => "command",
+        };
+        tx.execute(
+            "INSERT INTO audit_log (actor, action, detail, created_at) VALUES (?1, 'name-suggest', ?2, ?3)",
+            params![
+                actor,
+                format!(
+                    "{} funciones, {} propuestas, {} descartadas, proveedor {provider}",
+                    batch.functions, batch.suggestions, batch.discarded
+                ),
+                now
+            ],
+        )?;
+        tx.commit()?;
+        Ok(batch)
+    }
+
+    /// Lista propuestas de nombre persistidas.
+    ///
+    /// `function` filtra por direccion y `state` por `pending`, `accepted`,
+    /// `rejected` o `all` (por defecto `pending`). El orden es estable:
+    /// direccion de funcion y numero de propuesta.
+    pub fn suggestions(
+        &self,
+        function: Option<u64>,
+        state: Option<&str>,
+    ) -> Result<Vec<SuggestionRecord>> {
+        let state = state.unwrap_or("pending");
+        if !matches!(state, "pending" | "accepted" | "rejected" | "all") {
+            return Err(Error::NameForge(format!(
+                "estado de propuesta invalido: {state:?} (usa pending, accepted, rejected o all)"
+            )));
+        }
+        let mut st = self.conn.prepare(
+            "SELECT s.id, f.address, s.proposal, s.confidence, s.reason, s.status, s.seq,
+                    s.created_at, s.decided_at
+             FROM ai_suggestion s JOIN function f ON f.id = s.function_id
+             WHERE s.kind = 'name'
+               AND (?1 IS NULL OR f.address = ?1)
+               AND (?2 = 'all' OR s.status = ?2)
+             ORDER BY f.address, s.seq, s.id",
+        )?;
+        let rows = st.query_map(params![function.map(|a| a as i64), state], suggestion_from_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Acepta una propuesta y aplica su nombre a la funcion.
+    ///
+    /// Una propuesta ya decidida no se puede volver a aceptar. Si la funcion ya
+    /// tenia un nombre, hay que confirmar el reemplazo con `force`.
+    pub fn accept_suggestion(
+        &mut self,
+        id: i64,
+        force: bool,
+        actor: &str,
+    ) -> Result<SuggestionRecord> {
+        let decision = self.suggestion_decision(id)?;
+        if decision.status != "pending" {
+            return Err(Error::NameForge(format!(
+                "la propuesta {id} ya fue {}; no se puede aceptar de nuevo",
+                decision.status
+            )));
+        }
+        if let Some(current) = &decision.function_name {
+            if !force {
+                return Err(Error::NameForge(format!(
+                    "0x{:08x} ya tiene nombre {:?}; repite con --force para reemplazarlo",
+                    decision.address, current
+                )));
+            }
+        }
+        if !nameforge::is_valid_identifier(&decision.name, nameforge::DEFAULT_MAX_LENGTH) {
+            return Err(Error::NameForge(format!(
+                "el nombre guardado {:?} ya no es un identificador valido",
+                decision.name
+            )));
+        }
+
+        let now = now_iso();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "UPDATE function SET name = ?1,
+                    state = CASE WHEN state = 'detected' THEN 'named' ELSE state END,
+                    updated_at = ?2
+             WHERE id = ?3",
+            params![decision.name, now, decision.function_id],
+        )?;
+        tx.execute(
+            "UPDATE ai_suggestion SET status = 'accepted', decided_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        tx.execute(
+            "INSERT INTO audit_log (actor, action, detail, created_at) VALUES (?1, 'name-accept', ?2, ?3)",
+            params![
+                actor,
+                format!(
+                    "0x{:08x}: {:?} (confianza {:.2}, propuesta {id}, force={force})",
+                    decision.address, decision.name, decision.confidence
+                ),
+                now
+            ],
+        )?;
+        tx.commit()?;
+        Ok(SuggestionRecord {
+            id,
+            function: decision.address,
+            name: decision.name,
+            confidence: decision.confidence,
+            reason: decision.reason,
+            state: "accepted".into(),
+            seq: decision.seq,
+            created_at: decision.created_at,
+            decided_at: Some(now),
+        })
+    }
+
+    /// Rechaza una propuesta pendiente sin tocar el nombre de la funcion.
+    pub fn reject_suggestion(&mut self, id: i64, actor: &str) -> Result<SuggestionRecord> {
+        let decision = self.suggestion_decision(id)?;
+        if decision.status != "pending" {
+            return Err(Error::NameForge(format!(
+                "la propuesta {id} ya fue {}; no se puede rechazar de nuevo",
+                decision.status
+            )));
+        }
+        let now = now_iso();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "UPDATE ai_suggestion SET status = 'rejected', decided_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        tx.execute(
+            "INSERT INTO audit_log (actor, action, detail, created_at) VALUES (?1, 'name-reject', ?2, ?3)",
+            params![
+                actor,
+                format!(
+                    "0x{:08x}: {:?} (confianza {:.2}, propuesta {id})",
+                    decision.address, decision.name, decision.confidence
+                ),
+                now
+            ],
+        )?;
+        tx.commit()?;
+        Ok(SuggestionRecord {
+            id,
+            function: decision.address,
+            name: decision.name,
+            confidence: decision.confidence,
+            reason: decision.reason,
+            state: "rejected".into(),
+            seq: decision.seq,
+            created_at: decision.created_at,
+            decided_at: Some(now),
+        })
+    }
+
+    /// Nombres aprobados que sirven de ejemplo de estilo a NameForge.
+    fn named_example_names(&self) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare(
+            "SELECT name FROM function WHERE name IS NOT NULL ORDER BY address LIMIT 50",
+        )?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Funciones que procesara una tanda de propuestas, en orden de direccion.
+    fn suggest_targets(&self, options: &SuggestOptions) -> Result<Vec<(i64, u64)>> {
+        let mut out = Vec::new();
+        if options.addresses.is_empty() {
+            let mut st = self
+                .conn
+                .prepare("SELECT id, address FROM function WHERE name IS NULL ORDER BY address")?;
+            for row in
+                st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as u64)))?
+            {
+                out.push(row?);
+            }
+        } else {
+            let mut st =
+                self.conn.prepare("SELECT id, address FROM function WHERE address = ?1")?;
+            let mut seen = BTreeSet::new();
+            for &address in &options.addresses {
+                if !seen.insert(address) {
+                    continue;
+                }
+                let row = st
+                    .query_row([address as i64], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as u64))
+                    })
+                    .optional()?;
+                match row {
+                    Some(v) => out.push(v),
+                    None => {
+                        return Err(Error::NameForge(format!(
+                            "no hay ninguna funcion en 0x{address:x}; ejecuta `analyze` primero"
+                        )))
+                    }
+                }
+            }
+        }
+        if options.limit > 0 {
+            out.truncate(options.limit);
+        }
+        Ok(out)
+    }
+
+    /// Datos de una propuesta y de su funcion para aceptar o rechazar.
+    fn suggestion_decision(&self, id: i64) -> Result<SuggestionDecision> {
+        self.conn
+            .query_row(
+                "SELECT s.status, s.proposal, s.confidence, s.reason, s.seq, s.created_at,
+                        s.function_id, f.address, f.name
+                 FROM ai_suggestion s JOIN function f ON f.id = s.function_id
+                 WHERE s.id = ?1 AND s.kind = 'name'",
+                [id],
+                |r| {
+                    Ok(SuggestionDecision {
+                        status: r.get(0)?,
+                        name: r.get(1)?,
+                        confidence: r.get(2)?,
+                        reason: r.get(3)?,
+                        seq: r.get::<_, i64>(4)? as u8,
+                        created_at: r.get(5)?,
+                        function_id: r.get(6)?,
+                        address: r.get::<_, i64>(7)? as u64,
+                        function_name: r.get(8)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| Error::NameForge(format!("no existe la propuesta de nombre {id}")))
     }
 
     /// Exporta al formato de intercambio JSON (seccion 9.4 del documento).

@@ -87,6 +87,17 @@ validación/normalización y los scripts de exportación e importación de Ghidr
 El formato está validado por pruebas en Rust, Python y CI
 ([ADR-012](adr/ADR-012-esquema-re-y-adaptadores.md)).
 
+**Estado tras la Fase 3:** añadido el servicio NameForge: el módulo `nameforge`
+(contexto acotado, proveedor heurístico y comando externo, estilo configurable),
+la migración SQLite v4 (`ai_suggestion` ampliada), los métodos de proyecto
+`suggest_names`, `suggestions`, `accept_suggestion` y `reject_suggestion`, el
+comando CLI `name` (batch, interactivo, list, accept, reject, config) y el
+servicio Python `ai/nameforge` (heurístico y proveedor OpenAI-compatible por
+`urllib`). Ninguna propuesta cambia un nombre sin aceptación explícita; aceptar
+sobre una función ya nombrada exige `--force`.
+El formato está validado por pruebas en Rust, Python y CI
+([ADR-012](adr/ADR-012-esquema-re-y-adaptadores.md)).
+
 **Flujo de extremo a extremo (§5.2):** binario del usuario → cargador → análisis →
 servicios de IA proponen → verificación automática → consolidación en el proyecto →
 capa de plataforma → TwinRun → documentación y métricas.
@@ -102,7 +113,7 @@ capa de plataforma → TwinRun → documentación y métricas.
 | RF-01 | Cargar ELF, SELF/NSO, DOL, XEX, PE y ROM planas aportadas por el usuario | Alta | **Parcial** (ELF, DOL, PE, NSO con LZ4, ROM plana; XEX reconocido sin cargador; SELF rechazado por diseño) |
 | RF-02 | Detectar arquitectura (MIPS, PPC, ARM, ARM64, x86-64, SPU) y endianness | Alta | **Hecho** (por cabeceras) |
 | RF-03 | Base de datos de funciones, símbolos, tipos y progreso | Alta | **Hecho** (esquema v3: funciones, llamadas, bloques básicos y CFG con *ownership* de instrucciones) |
-| RF-04 | Proponer nombres con confianza y justificación | Alta | Fase 3 |
+| RF-04 | Proponer nombres con confianza y justificación | Alta | **Hecho** (NameForge: núcleo, CLI `name`, servicio Python `ai/nameforge` y migración v4) |
 | RF-05 | Bucle de matching con toolchain fijado | Alta | Fase 4 |
 | RF-06 | Elevar a LLVM IR y recompilar para el destino | Alta | Fase 5 |
 | RF-07 | Capas de abstracción hacia SDL3, Vulkan, OpenGL y Metal | Media | Fase 6 |
@@ -124,7 +135,7 @@ capa de plataforma → TwinRun → documentación y métricas.
 | RNF-03 | Seguridad | Compiladores y binarios en contenedores aislados | Cargadores y analizador sin *panic* ante entradas mutadas; contenedores pendientes |
 | RNF-04 | Privacidad | Modo local; envío a IA opcional | Fase 3 |
 | RNF-05 | Portabilidad | Windows, Linux y macOS | Matriz de CI en los tres sistemas ([ADR-011](adr/ADR-011-integracion-continua.md)); probado localmente en Windows 10 (GNU) y Linux |
-| RNF-06 | Mantenibilidad | Cobertura ≥ 80 % en núcleo; API documentada | CI exige ≥ 80 % de líneas en `decompforge-core` con `cargo-llvm-cov`; medido en local con el toolchain MSVC el 2026-11-02 tras el CFG: **90,27 % de líneas** (`scripts/coverage.ps1`). `cargo doc` sin advertencias y `missing_docs` activo ([ADR-011](adr/ADR-011-integracion-continua.md)) |
+| RNF-06 | Mantenibilidad | Cobertura ≥ 80 % en núcleo; API documentada | CI exige ≥ 80 % de líneas en `decompforge-core` con `cargo-llvm-cov`; medido en local con el toolchain MSVC el 2026-11-02 tras NameForge: **86,09 % de líneas** (`scripts/coverage.ps1`). `cargo doc` sin advertencias y `missing_docs` activo ([ADR-011](adr/ADR-011-integracion-continua.md)) |
 | RNF-07 | Extensibilidad | Nueva arquitectura sin tocar el núcleo | Pendiente (plugins) |
 | RNF-08 | Trazabilidad | Cada cambio de IA con origen y validación | Base lista (`audit_log` inmutable, `source.origin`; acción `analyze` auditable) |
 | RNF-09\* | Robustez ante entradas malformadas | Ninguna entrada provoca *panic* | **Hecho** (fuzzing ligero de cargadores y análisis; cargo-fuzz pendiente para CI) |
@@ -174,6 +185,7 @@ Puntuación = probabilidad (1-5) × impacto (1-5). Ordenados de mayor a menor.
 | [ADR-012](adr/ADR-012-esquema-re-y-adaptadores.md) | Esquema de intercambio `re-1.0` y arquitectura de adaptadores |
 | [ADR-013](adr/ADR-013-imagen-materializada-nso.md) | Imagen materializada para analizar NSO comprimido |
 | [ADR-014](adr/ADR-014-cfg-ownership-y-delay-slots.md) | CFG, *ownership* de instrucciones y *delay slots* de MIPS |
+| [ADR-015](adr/ADR-015-nameforge.md) | NameForge: nombres con confianza y justificación |
 
 Las seis primeras vienen del documento maestro (§5.3); 007-011 se tomaron al
 implementar la Fase 1, 012 al cerrar la Fase 2 y 013-014 al completar NSO y el

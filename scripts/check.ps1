@@ -110,6 +110,9 @@ if ($pythonCommand.Count -gt 0) {
     } else {
         Write-Warning "adaptadores omitidos: falta el modulo de Python 'jsonschema'"
     }
+
+    # Servicio NameForge (sin dependencias externas).
+    Invoke-Python @("-m", "unittest", "discover", "-s", "ai/tests", "-t", "ai")
 } else {
     Write-Warning "adaptadores omitidos: no se encontro Python"
 }

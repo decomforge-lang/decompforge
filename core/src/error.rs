@@ -49,6 +49,11 @@ pub enum Error {
     #[error("analisis: {0}")]
     Analysis(String),
 
+    /// NameForge no puede construir el contexto o el proveedor devolvio algo
+    /// que no cumple el contrato.
+    #[error("nameforge: {0}")]
+    NameForge(String),
+
     /// Documento de intercambio JSON invalido o incompatible.
     #[error("intercambio JSON: {0}")]
     Exchange(String),

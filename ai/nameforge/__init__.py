@@ -1,0 +1,1 @@
+# Paquete NameForge del servicio de IA.

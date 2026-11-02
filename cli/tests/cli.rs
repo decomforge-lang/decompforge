@@ -163,6 +163,31 @@ fn apply_rejects_invalid_documents_without_touching_the_project() {
 }
 
 #[test]
+fn name_config_and_list_work_on_empty_project() {
+    let dir = TempDir::new();
+    let project = dir.file("demo.dfproj");
+    assert!(run(&["init", "demo", "--dir", dir.0.to_str().unwrap()]).status.success());
+
+    let out = run(&["name", "config"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"provider\""), "{stdout}");
+
+    let out = run(&["name", "list", "--project", project.to_str().unwrap(), "--json"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v.as_array().unwrap().is_empty());
+
+    let out = run(&["name", "accept", "999", "--project", project.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no existe"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn re_export_requires_a_loaded_binary() {
     let dir = TempDir::new();
     let project = dir.file("vacio.dfproj");

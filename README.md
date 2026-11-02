@@ -16,7 +16,7 @@ La especificación completa está en
 | 0 | Descubrimiento y diseño | ✅ [`docs/FASE0-descubrimiento-y-diseno.md`](docs/FASE0-descubrimiento-y-diseno.md) |
 | 1 | Núcleo y modelo de proyecto | ✅ Cargadores, SQLite, CLI, Capstone, detección recursiva de funciones, *ownership* y CFG |
 | 2 | Integración con herramientas de RE | ✅ Esquema `re-1.0`, `export --format re-json`, `apply`, cliente Python y scripts de Ghidra ([`adapters/`](adapters/)); los scripts de Ghidra aún no se han compilado con una instalación real |
-| 3-11 | NameForge, MatchLoop, StaticRecomp, HAL, TwinRun, UI... | ⬜ Pendiente |
+| 3 | NameForge (nombres con confianza y justificación) | ✅ Núcleo (`nameforge`), CLI (`name`), servicio Python (`ai/nameforge`) y migración SQLite v4 |
 
 Detalle de lo hecho y decisiones: [`docs/BITACORA.md`](docs/BITACORA.md).
 

@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 use rusqlite::Connection;
 
 /// Version del esquema SQLite que entiende este binario.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const MIGRATION_1: &str = r#"
 CREATE TABLE project (
@@ -168,8 +168,19 @@ CREATE TABLE cfg_edge (
 CREATE INDEX idx_cfg_edge_dst ON cfg_edge(dst);
 "#;
 
+/// v4: propuestas de NameForge. La tabla `ai_suggestion` ya existia en v1 con
+/// el contrato del Documento Maestro; se amplia con la justificacion, el orden
+/// de la propuesta (1-3) y la fecha de decision para la cola de revision.
+const MIGRATION_4: &str = r#"
+ALTER TABLE ai_suggestion ADD COLUMN reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE ai_suggestion ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ai_suggestion ADD COLUMN decided_at TEXT;
+CREATE INDEX idx_ai_suggestion_function ON ai_suggestion(function_id, status);
+"#;
+
 /// Version y SQL de cada migracion, en orden.
-const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2), (3, MIGRATION_3)];
+const MIGRATIONS: &[(i64, &str)] =
+    &[(1, MIGRATION_1), (2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4)];
 
 /// Aplica las migraciones pendientes. Rechaza bases creadas por una version
 /// mas nueva del programa.
