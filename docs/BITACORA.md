@@ -376,7 +376,8 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
   `test (macos-latest)` quedó en cola sin runner ("not acquired by Runner ...
   after multiple attempts") por falta de capacidad de macOS arm64. La matriz
   pasa a `macos-15-intel` (macOS x86_64, otra cola) manteniendo la cobertura de
-  RNF-05.
+  RNF-05. La tercera ejecución (`b17041d`) terminó en verde con los siete
+  trabajos.
 
 **Ghidra compilado y probado por primera vez**
 - Instalado Ghidra 12.2 y JDK 25 (Ghidra 12.2 declara
