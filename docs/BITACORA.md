@@ -484,6 +484,9 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
   77,67 % de líneas: los caminos de error restantes se cubren en las pruebas de
   integración de `loader`.
 - Documentación actualizada: README, estado de la Fase 1/RF-01 y ADR-013.
+- CI ([run
+  #5](https://github.com/decomforge-lang/decompforge/actions/runs/41497238296)):
+  los siete trabajos en verde, cobertura incluida.
 
 ### Limitaciones conocidas (sin maquillar)
 - **NSO real**: la descompresión se ha probado con NSO sintéticos, no con un
