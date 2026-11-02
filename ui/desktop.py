@@ -39,7 +39,7 @@ def find_bin():
 
 BIN = find_bin()
 
-def run_cli(args, cwd=None, on_done=None):
+def run_cli(args, cwd=None, on_done=None, app=None):
     def worker():
         try:
             kwargs = {"cwd": cwd or PARENT, "capture_output": True, "text": True}
@@ -51,7 +51,10 @@ def run_cli(args, cwd=None, on_done=None):
         except Exception as e:
             out = str(e); code = 127
         if on_done:
-            on_done(code, out)
+            if app is not None:
+                app.after(0, lambda c=code, o=out: on_done(c, o))
+            else:
+                on_done(code, out)
     threading.Thread(target=worker, daemon=True).start()
 
 class DecompForgeApp(tk.Tk):
@@ -202,7 +205,7 @@ class DecompForgeApp(tk.Tk):
             return
         self.set_status("cargando y analizando…")
         self.log(f"$ decompforge load {binp} --project {proj}")
-        run_cli(["load", binp, "--project", proj], on_done=lambda c, o: self._on_load(c, o, binp, proj))
+        run_cli(["load", binp, "--project", proj], app=self, on_done=lambda c, o: self._on_load(c, o, binp, proj))
 
     def _on_load(self, code, out, binp, proj):
         self.log(out)
@@ -219,7 +222,7 @@ class DecompForgeApp(tk.Tk):
             return
         self.set_status("re-analizando…")
         self.log(f"$ decompforge analyze {binp} --project {proj}")
-        run_cli(["analyze", binp, "--project", proj], on_done=lambda c, o: (self.log(o), self.set_status("analizado" if c == 0 else "error")))
+        run_cli(["analyze", binp, "--project", proj], app=self, on_done=lambda c, o: (self.log(o), self.set_status("analizado" if c == 0 else "error")))
 
     def act_info(self):
         proj = self.project.get().strip()
@@ -227,7 +230,7 @@ class DecompForgeApp(tk.Tk):
             messagebox.showwarning("Faltan datos", "Indica proyecto.")
             return
         self.log(f"$ decompforge info --project {proj} --json")
-        run_cli(["info", "--project", proj, "--json"], on_done=lambda c, o: (self.log(o), self.set_status("listo" if c == 0 else "error")))
+        run_cli(["info", "--project", proj, "--json"], app=self, on_done=lambda c, o: (self.log(o), self.set_status("listo" if c == 0 else "error")))
 
     def act_export(self):
         proj = self.project.get().strip()
@@ -239,7 +242,7 @@ class DecompForgeApp(tk.Tk):
             return
         fmt = "re-json"
         self.log(f"$ decompforge export --format {fmt} --project {proj} --output {outp}")
-        run_cli(["export", "--format", fmt, "--project", proj, "--output", outp], on_done=lambda c, o: (self.log(o), self.set_status("exportado" if c == 0 else "error")))
+        run_cli(["export", "--format", fmt, "--project", proj, "--output", outp], app=self, on_done=lambda c, o: (self.log(o), self.set_status("exportado" if c == 0 else "error")))
 
     # ---------- IA ----------
     def act_name(self, batch=True):
@@ -276,7 +279,7 @@ class DecompForgeApp(tk.Tk):
             except Exception as e:
                 self.log(f"no se pudo escribir config: {e}")
         self.log("$ " + " ".join(args))
-        run_cli(args, on_done=lambda c, o: self._on_name(c, o))
+        run_cli(args, app=self, on_done=lambda c, o: self._on_name(c, o))
 
     def _on_name(self, code, out):
         self.log(out, tab="props" if False else "log")
@@ -298,7 +301,7 @@ class DecompForgeApp(tk.Tk):
             return
         state = simpledialog.askstring("Estado", "pending/accepted/rejected/all", initialvalue="pending") or "pending"
         self.log(f"$ decompforge name list --project {proj} --state {state} --json")
-        run_cli(["name", "list", "--project", proj, "--state", state, "--json"], on_done=lambda c, o: self._on_name_list(c, o))
+        run_cli(["name", "list", "--project", proj, "--state", state, "--json"], app=self, on_done=lambda c, o: self._on_name_list(c, o))
 
     def _on_name_list(self, code, out):
         self.log(out)
@@ -324,7 +327,7 @@ class DecompForgeApp(tk.Tk):
         if force:
             args.append("--force")
         self.log("$ " + " ".join(args))
-        run_cli(args, on_done=lambda c, o: (self.log(o), self.set_status("aceptada" if c == 0 else "error")))
+        run_cli(args, app=self, on_done=lambda c, o: (self.log(o), self.set_status("aceptada" if c == 0 else "error")))
 
     def act_name_reject(self):
         proj = self.project.get().strip()
@@ -335,11 +338,11 @@ class DecompForgeApp(tk.Tk):
         if nid is None:
             return
         self.log(f"$ decompforge name reject {nid} --project {proj}")
-        run_cli(["name", "reject", str(nid), "--project", proj], on_done=lambda c, o: (self.log(o), self.set_status("rechazada" if c == 0 else "error")))
+        run_cli(["name", "reject", str(nid), "--project", proj], app=self, on_done=lambda c, o: (self.log(o), self.set_status("rechazada" if c == 0 else "error")))
 
     def act_name_config(self):
         self.log("$ decompforge name config")
-        run_cli(["name", "config"], on_done=lambda c, o: (self.log(o), self.set_status("config generada" if c == 0 else "error")))
+        run_cli(["name", "config"], app=self, on_done=lambda c, o: (self.log(o), self.set_status("config generada" if c == 0 else "error")))
 
     # ---------- compilador ----------
     def act_apply(self):
@@ -351,7 +354,7 @@ class DecompForgeApp(tk.Tk):
         if not f:
             return
         self.log(f"$ decompforge apply {f} --project {proj}")
-        run_cli(["apply", f, "--project", proj], on_done=lambda c, o: (self.log(o), self.set_status("aplicado" if c == 0 else "error")))
+        run_cli(["apply", f, "--project", proj], app=self, on_done=lambda c, o: (self.log(o), self.set_status("aplicado" if c == 0 else "error")))
 
     def act_compile(self):
         messagebox.showinfo("Compilador", "Pendiente: integracion con toolchain fijado (Fase 4/5).")
@@ -365,7 +368,7 @@ class DecompForgeApp(tk.Tk):
             return
         self.platform.set("switch")
         self.log(f"$ decompforge load {binp} --project {proj}  (switch)")
-        run_cli(["load", binp, "--project", proj], on_done=lambda c, o: (self.log(o), self.set_status("cargado" if c == 0 else "error")))
+        run_cli(["load", binp, "--project", proj], app=self, on_done=lambda c, o: (self.log(o), self.set_status("cargado" if c == 0 else "error")))
 
     def act_switch_recompile(self):
         messagebox.showinfo("Switch → Windows", "Pendiente: recompilacion estatica (Fase 5/6).")
@@ -377,3 +380,4 @@ if __name__ == "__main__":
         pass
     app = DecompForgeApp()
     app.mainloop()
+
