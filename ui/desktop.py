@@ -81,13 +81,13 @@ class DecompForgeApp(tk.Tk):
         menubar.add_cascade(label="1. Decompilador (Ghidra)", menu=m_dec)
 
         m_ia = tk.Menu(menubar, tearoff=0, bg="#171a21", fg="#e6e8ee")
-        m_ia.add_command(label="NameForge por lotes", command=lambda: self.act_name(batch=True))
-        m_ia.add_command(label="NameForge interactivo", command=lambda: self.act_name(batch=False))
+        m_ia.add_command(label="Model AI por lotes", command=lambda: self.act_name(batch=True))
+        m_ia.add_command(label="Model AI interactivo", command=lambda: self.act_name(batch=False))
         m_ia.add_command(label="Listar propuestas", command=self.act_name_list)
         m_ia.add_command(label="Aceptar propuesta...", command=self.act_name_accept)
         m_ia.add_command(label="Rechazar propuesta...", command=self.act_name_reject)
         m_ia.add_command(label="Generar config por defecto", command=self.act_name_config)
-        menubar.add_cascade(label="2. IA (NameForge)", menu=m_ia)
+        menubar.add_cascade(label="2. Model AI", menu=m_ia)
 
         m_comp = tk.Menu(menubar, tearoff=0, bg="#171a21", fg="#e6e8ee")
         m_comp.add_command(label="Aplicar updates.json", command=self.act_apply)
@@ -141,6 +141,11 @@ class DecompForgeApp(tk.Tk):
         self.update_idletasks()
 
     # ---------- helpers ----------
+    def act_pick_projdir(self):
+        d = filedialog.askdirectory()
+        if d:
+            self.projdir.set(d)
+
     def act_pick_binary(self):
         p = filedialog.askopenfilename(filetypes=[("Binario", "*.*")])
         if p:
