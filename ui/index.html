@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DecompForge — Panel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">DF</span>
+      <strong>DecompForge</strong>
+      <span class="tag">asistido por IA</span>
+    </div>
+    <nav class="tabs">
+      <button data-tab="proyectos" class="active">Proyectos</button>
+      <button data-tab="analisis">Análisis</button>
+      <button data-tab="nameforge">NameForge</button>
+      <button data-tab="exportar">Exportar</button>
+      <button data-tab="config">Config</button>
+    </nav>
+    <div class="status" id="status">listo</div>
+  </header>
+
+  <main>
+    <section id="proyectos" class="panel active">
+      <h2>Proyectos</h2>
+      <div class="row">
+        <label>Directorio <input id="projDir" value="." /></label>
+        <button id="btnListProj">Listar</button>
+      </div>
+      <div class="row">
+        <label>Nombre <input id="projName" value="demo" /></label>
+        <label>Plataforma <input id="projPlatform" value="ps2" /></label>
+        <label><input type="checkbox" id="projSample" checked /> sample</label>
+        <button id="btnInit">Crear</button>
+      </div>
+      <div class="row">
+        <label>Proyecto (.dfproj) <input id="projPath" placeholder="demo.dfproj" /></label>
+      </div>
+      <pre id="projOut" class="out"></pre>
+      <div id="projFiles" class="filelist"></div>
+    </section>
+
+    <section id="analisis" class="panel">
+      <h2>Análisis</h2>
+      <div class="row">
+        <label>Binario <input id="binPath" placeholder="ruta al binario" /></label>
+        <button id="btnDetect">Detectar tipo</button>
+        <button id="btnLoad">Cargar + analizar</button>
+        <button id="btnAnalyze">Re-analizar</button>
+      </div>
+      <div id="detectInfo" class="detect"></div>
+      <div class="row">
+        <label>Arch (ROM) <input id="anArch" placeholder="mips" /></label>
+        <label>Endian <input id="anEndian" placeholder="little" /></label>
+        <label>Base <input id="anBase" placeholder="0x00100000" /></label>
+      </div>
+      <div class="row">
+        <label>Proyecto <input id="anProj" placeholder="demo.dfproj" /></label>
+        <button id="btnInfo">Info del proyecto</button>
+      </div>
+      <pre id="anOut" class="out"></pre>
+    </section>
+
+    <section id="nameforge" class="panel">
+      <h2>NameForge</h2>
+      <div class="row">
+        <label>Binario <input id="nfBin" placeholder="ruta al binario" /></label>
+        <label>Proyecto <input id="nfProj" placeholder="demo.dfproj" /></label>
+        <label>Config <input id="nfConfig" placeholder="nameforge.json (opcional)" /></label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="nfBatch" checked /> batch</label>
+        <label>Límite <input id="nfLimit" type="number" value="0" /></label>
+        <label>Función <input id="nfFunc" placeholder="0x00100000" /></label>
+        <button id="btnName">Proponer nombres</button>
+      </div>
+      <div class="row">
+        <label>Estado <select id="nfState"><option value="pending">pending</option><option value="accepted">accepted</option><option value="rejected">rejected</option><option value="all">all</option></select></label>
+        <label>Función <input id="nfListFunc" placeholder="(opcional)" /></label>
+        <button id="btnNameList">Listar propuestas</button>
+      </div>
+      <div class="row">
+        <label>ID <input id="nfId" type="number" /></label>
+        <label><input type="checkbox" id="nfForce" /> force</label>
+        <button id="btnNameAccept">Aceptar</button>
+        <button id="btnNameReject">Rechazar</button>
+      </div>
+      <div class="row">
+        <button id="btnNameConfig">Generar config por defecto</button>
+      </div>
+      <pre id="nfOut" class="out"></pre>
+      <div id="nfTable" class="tablewrap"></div>
+    </section>
+
+    <section id="exportar" class="panel">
+      <h2>Exportar / Aplicar</h2>
+      <div class="row">
+        <label>Proyecto <input id="exProj" placeholder="demo.dfproj" /></label>
+        <label>Formato <select id="exFmt"><option value="json">json</option><option value="re-json">re-json</option></select></label>
+        <label>Salida <input id="exOut" placeholder="export.json" /></label>
+        <button id="btnExport">Exportar</button>
+      </div>
+      <div class="row">
+        <label>Updates JSON <input id="apFile" placeholder="updates.json" /></label>
+        <label>Proyecto <input id="apProj" placeholder="demo.dfproj" /></label>
+        <button id="btnApply">Aplicar</button>
+      </div>
+      <pre id="exOutPre" class="out"></pre>
+    </section>
+
+    <section id="config" class="panel">
+      <h2>Configuración</h2>
+      <p class="hint">Binario detectado: <code id="cfgBin">—</code></p>
+      <pre id="cfgOut" class="out"></pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
+"""

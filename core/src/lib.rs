@@ -40,9 +40,16 @@ pub mod arch;
 pub mod db;
 pub mod error;
 pub mod loader;
+pub mod matchloop;
 pub mod nameforge;
+pub mod platform;
 pub mod project;
+pub mod staticrecomp;
 pub mod synthetic;
+pub mod twinrun;
+
+// Fases 4-7: modulos en desarrollo (estructura creada segun Documento Maestro).
+// Los binarios se analizan siempre sobre copias aportadas por el usuario (ADR-009).
 mod timeutil;
 
 pub use arch::{Arch, Endian, Format};
