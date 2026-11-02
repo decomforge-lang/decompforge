@@ -42,7 +42,10 @@ BIN = find_bin()
 def run_cli(args, cwd=None, on_done=None):
     def worker():
         try:
-            proc = subprocess.run([BIN] + args, cwd=cwd or PARENT, capture_output=True, text=True)
+            kwargs = {"cwd": cwd or PARENT, "capture_output": True, "text": True}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+            proc = subprocess.run([BIN] + args, **kwargs)
             out = proc.stdout + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
             code = proc.returncode
         except Exception as e:
@@ -73,7 +76,7 @@ class DecompForgeApp(tk.Tk):
 
         m_dec = tk.Menu(menubar, tearoff=0, bg="#171a21", fg="#e6e8ee")
         m_dec.add_command(label="Abrir binario...", command=self.act_pick_binary)
-        m_dec.add_command(label="Cargar + analizar", command=self.act_load_analyze)
+        m_dec.add_command(label="Descomprimir", command=self.act_load_analyze)
         m_dec.add_command(label="Re-analizar", command=self.act_reanalyze)
         m_dec.add_command(label="Info del proyecto", command=self.act_info)
         m_dec.add_separator()

@@ -83,6 +83,14 @@ $('#btnDetect').addEventListener('click', async () => {
   showOut('#anOut', (r.json && r.json.stdout ? r.json.stdout : r.text) + (r.json && r.json.stderr ? '\\n' + r.json.stderr : ''));
 });
 
+$('#btnDecompress') && $('#btnDecompress').addEventListener('click', async () => {
+  const body = { binary: $('#binPath').value, project: $('#anProj').value || $('#projPath').value, arch: $('#anArch').value || undefined, endian: $('#anEndian').value || undefined, base: $('#anBase').value || undefined };
+  setStatus('descomprimiendo…');
+  const r = await api('/api/load', body);
+  setStatus(r.ok ? 'descomprimido' : 'error', r.ok ? 'ok' : 'err');
+  showOut('#anOut', (r.json && r.json.stdout ? r.json.stdout : r.text) + (r.json && r.json.stderr ? '\\n' + r.json.stderr : ''));
+});
+
 $('#btnAnalyze').addEventListener('click', async () => {
   const body = { binary: $('#binPath').value, project: $('#anProj').value || $('#projPath').value };
   setStatus('analizando…');
