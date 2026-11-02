@@ -2,6 +2,8 @@
 //! detectar funciones y llamadas, y comprobar que el estado se persiste y se
 //! puede repetir sin perder trabajo del usuario.
 
+use decompforge_core::analysis::{analyze, AnalysisOptions, EdgeKind, Image};
+use decompforge_core::loader::Section;
 use decompforge_core::synthetic as syn;
 use decompforge_core::{Arch, Endian, Error, FlatSpec, LoadOptions, Project};
 
@@ -31,18 +33,149 @@ fn calls(p: &Project) -> Vec<(u64, u64)> {
         .unwrap()
 }
 
+fn blocks(p: &Project) -> Vec<(u64, u64, u64)> {
+    p.conn()
+        .prepare("SELECT address, size, instructions FROM basic_block ORDER BY address")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64, r.get::<_, i64>(2)? as u64))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+fn cfg(p: &Project) -> Vec<(u64, u64, String)> {
+    p.conn()
+        .prepare("SELECT src, dst, kind FROM cfg_edge ORDER BY src, dst, kind")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64, r.get::<_, String>(2)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
 #[test]
-fn mips_recursive_detection() {
+fn mips_recursive_detection_with_delay_slots_and_cfg() {
     let bin = syn::elf_mips_le32_program();
     let mut p = loaded(&bin, "ps2");
     let s = p.analyze(&bin, "tester").unwrap();
     assert_eq!((s.functions, s.call_edges, s.truncated), (3, 2, false));
-    assert_eq!(s.instructions, 10);
-    assert_eq!(functions(&p), [(0x0010_0000, 0x18), (0x0010_0020, 0x08), (0x0010_0030, 0x08)]);
+    // Los `nop` de delay slot de `jal` y del `jr $ra` final ya cuentan.
+    assert_eq!(s.instructions, 13);
+    assert_eq!((s.basic_blocks, s.cfg_edges), (5, 4));
+    assert_eq!(functions(&p), [(0x0010_0000, 0x1c), (0x0010_0020, 0x0C), (0x0010_0030, 0x0C)]);
     assert_eq!(calls(&p), [(0x0010_0000, 0x0010_0020), (0x0010_0000, 0x0010_0030)]);
+    assert_eq!(
+        blocks(&p),
+        [
+            (0x0010_0000, 0x0C, 3),
+            (0x0010_000C, 0x08, 2),
+            (0x0010_0014, 0x08, 2),
+            (0x0010_0020, 0x0C, 3),
+            (0x0010_0030, 0x0C, 3),
+        ]
+    );
+    assert_eq!(
+        cfg(&p),
+        [
+            (0x0010_0000, 0x0010_000C, "fallthrough".into()),
+            (0x0010_0000, 0x0010_0020, "call".into()),
+            (0x0010_000C, 0x0010_0014, "fallthrough".into()),
+            (0x0010_000C, 0x0010_0030, "call".into()),
+        ]
+    );
+    // El delay slot de `jr $ra` pertenece a `main`; el relleno no es de nadie.
+    assert_eq!(p.instruction_owner(0x0010_0018).unwrap(), Some(0x0010_0000));
+    assert_eq!(p.instruction_owner(0x0010_001C).unwrap(), None);
+    assert_eq!(p.instruction_owner(0x0010_0024).unwrap(), Some(0x0010_0020));
+
     let info = p.info().unwrap();
     assert_eq!(info.functions, 3);
+    assert_eq!((info.basic_blocks, info.cfg_edges), (5, 4));
     assert_eq!(info.functions_by_state.get("detected"), Some(&3));
+}
+
+fn flat_image(code: &[u8], start: u64) -> Image<'_> {
+    let sections = [Section {
+        name: ".text".into(),
+        start,
+        size: code.len() as u64,
+        perms: "r-x".into(),
+        file_offset: Some(0),
+    }];
+    Image::from_sections(code, &sections)
+}
+
+#[test]
+fn mips_conditional_branch_keeps_its_delay_slot_in_the_block() {
+    // beq t0,t1,0x2010 ; addiu t0,t0,1 (delay) ; jr ra ; nop ; jr ra ; nop
+    let code = [
+        0x03, 0x00, 0x09, 0x11, // beq t0,t1,0x2010
+        0x01, 0x00, 0x08, 0x25, // addiu t0,t0,1 (delay slot)
+        0x08, 0x00, 0xE0, 0x03, // jr ra
+        0x00, 0x00, 0x00, 0x00, // nop (delay slot)
+        0x08, 0x00, 0xE0, 0x03, // jr ra (destino de la rama)
+        0x00, 0x00, 0x00, 0x00, // nop (delay slot)
+    ];
+    let img = flat_image(&code, 0x2000);
+    let a = analyze(&img, Arch::Mips, Endian::Little, 32, &[0x2000], &AnalysisOptions::default())
+        .unwrap();
+    assert_eq!(a.instructions, 6);
+    assert_eq!(a.functions.len(), 1);
+    assert_eq!((a.functions[0].address, a.functions[0].size), (0x2000, 0x18));
+    assert_eq!(a.blocks.len(), 3);
+    assert_eq!((a.blocks[0].start, a.blocks[0].end), (0x2000, 0x2008));
+    assert_eq!(a.blocks[0].instructions, 2); // rama + delay slot
+    assert_eq!(a.owner(0x2004), Some(0x2000)); // el delay slot es de la funcion
+    assert_eq!(
+        a.cfg_edges,
+        [
+            decompforge_core::analysis::CfgEdge {
+                src: 0x2000,
+                dst: 0x2008,
+                kind: EdgeKind::Fallthrough,
+            },
+            decompforge_core::analysis::CfgEdge {
+                src: 0x2000,
+                dst: 0x2010,
+                kind: EdgeKind::Branch,
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_jump_to_another_known_function_is_a_tail_call_not_an_inline_body() {
+    // j 0x3010 ; nop (delay) ; relleno ; jr ra ; nop
+    let code = [
+        0x04, 0x0C, 0x00, 0x08, // j 0x3010
+        0x00, 0x00, 0x00, 0x00, // nop (delay slot)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0xE0, 0x03, // jr ra
+        0x00, 0x00, 0x00, 0x00, // nop (delay slot)
+    ];
+    let img = flat_image(&code, 0x3000);
+    let a = analyze(
+        &img,
+        Arch::Mips,
+        Endian::Little,
+        32,
+        &[0x3000, 0x3010],
+        &AnalysisOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(a.functions.len(), 2);
+    assert_eq!((a.functions[0].address, a.functions[0].size), (0x3000, 0x08));
+    assert_eq!((a.functions[1].address, a.functions[1].size), (0x3010, 0x08));
+    assert_eq!(a.owner(0x3000), Some(0x3000));
+    assert_eq!(a.owner(0x3004), Some(0x3000)); // delay slot del salto
+    assert_eq!(a.owner(0x3010), Some(0x3010));
+    assert!(a
+        .cfg_edges
+        .iter()
+        .any(|e| e.src == 0x3000 && e.dst == 0x3010 && e.kind == EdgeKind::TailCall));
 }
 
 #[test]

@@ -14,7 +14,7 @@ La especificación completa está en
 | Fase | Contenido | Estado |
 | --- | --- | --- |
 | 0 | Descubrimiento y diseño | ✅ [`docs/FASE0-descubrimiento-y-diseno.md`](docs/FASE0-descubrimiento-y-diseno.md) |
-| 1 | Núcleo y modelo de proyecto | ✅ Cargadores, SQLite, CLI, Capstone y detección recursiva de funciones |
+| 1 | Núcleo y modelo de proyecto | ✅ Cargadores, SQLite, CLI, Capstone, detección recursiva de funciones, *ownership* y CFG |
 | 2 | Integración con herramientas de RE | ✅ Esquema `re-1.0`, `export --format re-json`, `apply`, cliente Python y scripts de Ghidra ([`adapters/`](adapters/)); los scripts de Ghidra aún no se han compilado con una instalación real |
 | 3-11 | NameForge, MatchLoop, StaticRecomp, HAL, TwinRun, UI... | ⬜ Pendiente |
 
@@ -91,7 +91,13 @@ Códigos de salida: `0` ok · `1` error · `2` comando aún no implementado · `
 | SELF (PS3/PS4) | 🚫 **rechazado por diseño**: cifrado/firmado. No se descifra ([ADR-007](docs/adr/ADR-007-rechazar-contenedores-protegidos.md)) |
 
 Detección de funciones: MIPS, PowerPC, ARM, ARM64 y x86/x86-64
-([ADR-010](docs/adr/ADR-010-capstone-y-deteccion-de-funciones.md)). El ELF de
+([ADR-010](docs/adr/ADR-010-capstone-y-deteccion-de-funciones.md)). Cada
+instrucción pertenece como mucho a una función (*ownership*); el análisis
+también produce bloques básicos y aristas de CFG (`fallthrough`, `branch`,
+`jump`, `call`, `tail_call`) que se guardan en el proyecto y se regeneran en cada
+`analyze`. En MIPS los *delay slots* de ramas, saltos, llamadas y retornos se
+incluyen en su función y en el bloque de la instrucción que transfiere el control
+([ADR-014](docs/adr/ADR-014-cfg-ownership-y-delay-slots.md)). El ELF de
 Cell **SPU** se puede cargar e inspeccionar con `load --no-analyze`, pero
 Capstone no lo desensambla: `analyze` devuelve un error explícito (código 4).
 

@@ -76,9 +76,9 @@ flowchart TB
 ```
 
 **Estado tras la Fase 1:** implementados `Cargador` (ELF, DOL, PE y NSO con
-LZ4), `Desensamblador` (Capstone) con detección recursiva de funciones y
-llamadas, `Proyecto SQLite` y `CLI` (init/load/analyze/info/export). El resto
-son carpetas con README.
+LZ4), `Desensamblador` (Capstone) con detección recursiva de funciones, llamadas,
+bloques básicos y CFG, `Proyecto SQLite` y `CLI` (init/load/analyze/info/export).
+El resto son carpetas con README.
 
 **Estado tras la Fase 2:** añadidos el documento bidireccional `re-1.0`
 (`export`/`updates`), los comandos `export --format re-json` y `apply`, la
@@ -101,7 +101,7 @@ capa de plataforma → TwinRun → documentación y métricas.
 | --- | --- | --- | --- |
 | RF-01 | Cargar ELF, SELF/NSO, DOL, XEX, PE y ROM planas aportadas por el usuario | Alta | **Parcial** (ELF, DOL, PE, NSO con LZ4, ROM plana; XEX reconocido sin cargador; SELF rechazado por diseño) |
 | RF-02 | Detectar arquitectura (MIPS, PPC, ARM, ARM64, x86-64, SPU) y endianness | Alta | **Hecho** (por cabeceras) |
-| RF-03 | Base de datos de funciones, símbolos, tipos y progreso | Alta | **Hecho** (esquema v1 + detección recursiva de funciones y llamadas) |
+| RF-03 | Base de datos de funciones, símbolos, tipos y progreso | Alta | **Hecho** (esquema v3: funciones, llamadas, bloques básicos y CFG con *ownership* de instrucciones) |
 | RF-04 | Proponer nombres con confianza y justificación | Alta | Fase 3 |
 | RF-05 | Bucle de matching con toolchain fijado | Alta | Fase 4 |
 | RF-06 | Elevar a LLVM IR y recompilar para el destino | Alta | Fase 5 |
@@ -124,7 +124,7 @@ capa de plataforma → TwinRun → documentación y métricas.
 | RNF-03 | Seguridad | Compiladores y binarios en contenedores aislados | Cargadores y analizador sin *panic* ante entradas mutadas; contenedores pendientes |
 | RNF-04 | Privacidad | Modo local; envío a IA opcional | Fase 3 |
 | RNF-05 | Portabilidad | Windows, Linux y macOS | Matriz de CI en los tres sistemas ([ADR-011](adr/ADR-011-integracion-continua.md)); probado localmente en Windows 10 (GNU) y Linux |
-| RNF-06 | Mantenibilidad | Cobertura ≥ 80 % en núcleo; API documentada | CI exige ≥ 80 % de líneas en `decompforge-core` con `cargo-llvm-cov`; medido en local con el toolchain MSVC el 2026-11-02: **91,95 % de líneas** (`scripts/coverage.ps1`). `cargo doc` sin advertencias y `missing_docs` activo ([ADR-011](adr/ADR-011-integracion-continua.md)) |
+| RNF-06 | Mantenibilidad | Cobertura ≥ 80 % en núcleo; API documentada | CI exige ≥ 80 % de líneas en `decompforge-core` con `cargo-llvm-cov`; medido en local con el toolchain MSVC el 2026-11-02 tras el CFG: **90,27 % de líneas** (`scripts/coverage.ps1`). `cargo doc` sin advertencias y `missing_docs` activo ([ADR-011](adr/ADR-011-integracion-continua.md)) |
 | RNF-07 | Extensibilidad | Nueva arquitectura sin tocar el núcleo | Pendiente (plugins) |
 | RNF-08 | Trazabilidad | Cada cambio de IA con origen y validación | Base lista (`audit_log` inmutable, `source.origin`; acción `analyze` auditable) |
 | RNF-09\* | Robustez ante entradas malformadas | Ninguna entrada provoca *panic* | **Hecho** (fuzzing ligero de cargadores y análisis; cargo-fuzz pendiente para CI) |
@@ -172,9 +172,12 @@ Puntuación = probabilidad (1-5) × impacto (1-5). Ordenados de mayor a menor.
 | [ADR-010](adr/ADR-010-capstone-y-deteccion-de-funciones.md) | Capstone y detección recursiva de funciones |
 | [ADR-011](adr/ADR-011-integracion-continua.md) | Integración continua, documentación y cobertura |
 | [ADR-012](adr/ADR-012-esquema-re-y-adaptadores.md) | Esquema de intercambio `re-1.0` y arquitectura de adaptadores |
+| [ADR-013](adr/ADR-013-imagen-materializada-nso.md) | Imagen materializada para analizar NSO comprimido |
+| [ADR-014](adr/ADR-014-cfg-ownership-y-delay-slots.md) | CFG, *ownership* de instrucciones y *delay slots* de MIPS |
 
 Las seis primeras vienen del documento maestro (§5.3); 007-011 se tomaron al
-implementar la Fase 1 y 012 al cerrar la Fase 2.
+implementar la Fase 1, 012 al cerrar la Fase 2 y 013-014 al completar NSO y el
+CFG.
 
 ---
 

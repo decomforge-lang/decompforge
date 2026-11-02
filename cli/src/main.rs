@@ -166,8 +166,8 @@ fn current_user() -> String {
 
 fn print_analysis(s: &AnalysisSummary) {
     println!(
-        "analisis:       {} funciones, {} instrucciones, {} llamadas",
-        s.functions, s.instructions, s.call_edges
+        "analisis:       {} funciones, {} instrucciones, {} llamadas, {} bloques, {} aristas CFG",
+        s.functions, s.instructions, s.call_edges, s.basic_blocks, s.cfg_edges
     );
     if s.truncated {
         println!("aviso: el analisis quedo truncado por los limites de seguridad");
@@ -275,6 +275,8 @@ fn cmd_info(raw: &[String]) -> CliResult<()> {
     println!("secciones:      {}", i.sections);
     println!("simbolos:       {}", i.symbols);
     println!("funciones:      {}", i.functions);
+    println!("bloques:        {}", i.basic_blocks);
+    println!("aristas CFG:    {}", i.cfg_edges);
     for (state, n) in &i.functions_by_state {
         println!("  {state:<11} {n}");
     }

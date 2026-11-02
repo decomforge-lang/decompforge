@@ -504,3 +504,87 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
 2. Fase 3: NameForge (nombres con confianza y justificación).
 
 ---
+
+## 2026-11-02 · Sesión 8 — CFG, *ownership* y *delay slots* de MIPS
+
+### Punto de partida
+- Las funciones se identificaban por su entrada, pero una instrucción podía
+  alcanzarse desde varias y no había un dueño explícito. Un salto directo a una
+  función todavía anónima se seguía como parte de la actual.
+- En MIPS, el *delay slot* de ramas, saltos, llamadas y retornos no se incluía en
+  la función: el tamaño quedaba corto y el hueco podía acabar en otra función.
+- La Fase 5 (elevación a LLVM IR) necesita bloques básicos y aristas tipadas.
+
+### Hecho
+
+**Desensamblador (`core/src/analysis/disasm.rs`)**
+- `Instruction::delay_slot`: verdadero en ramas, saltos, llamadas y retornos de
+  MIPS; falso en el resto de arquitecturas y en `syscall`/`break`/`eret`/`deret`.
+- Las variantes *branch-likely* se tratan como ramas normales (el hueco se
+  considera siempre ejecutado) para no perder código alcanzable.
+
+**Análisis (`core/src/analysis/mod.rs`)**
+- `EdgeKind` (`fallthrough`, `branch`, `jump`, `call`, `tail_call`),
+  `BasicBlock` y `CfgEdge`; `Analysis` expone `blocks`, `cfg_edges` y
+  `owner(address)`.
+- *Ownership* único por instrucción. Las instrucciones se guardan en un mapa
+  local y solo se reclaman al completar la función: un análisis truncado no deja
+  instrucciones adjudicadas a medias.
+- El flujo se corta al entrar en código de otra función o en una semilla
+  conocida. Un salto a otra función genera `tail_call`; una rama condicional,
+  `branch`, sin seguir el destino.
+- `build_cfg` calcula líderes (entrada, destinos de rama, instrucción tras
+  llamada/rama y *fallthrough*) y normaliza destinos interiores a su líder. El
+  *delay slot* pertenece al bloque de la instrucción que transfiere el control;
+  una rama que apunta a un hueco lo une a su bloque.
+
+**Persistencia y API**
+- Migración SQLite v3: tablas `basic_block` (función, dirección, tamaño,
+  instrucciones) y `cfg_edge` (origen, destino, tipo), con índices y `CHECK`.
+- `Project::analyze` regenera ambas tablas en cada ejecución; `Project::info`
+  informa de bloques y aristas; nuevo `Project::instruction_owner(address)`.
+- `AnalysisSummary` y la CLI muestran bloques y aristas CFG (en `analyze` y en
+  `info`); `audit_log` registra los contadores.
+
+**Pruebas**
+- MIPS: 13 instrucciones (antes 10), tamaños `0x1c/0x0c/0x0c`, 5 bloques y 4
+  aristas; el *delay slot* de `jr $ra` pertenece a `main` y el relleno no es de
+  nadie.
+- Rama condicional MIPS: el *delay slot* queda dentro del bloque de la rama y la
+  arista `branch` apunta al destino normalizado.
+- Salto entre dos funciones conocidas: arista `tail_call`, sin unir cuerpos.
+- Arquitecturas sin *delay slots*: PowerPC, ARM64 y x86-64 devuelven
+  `delay_slot = false`.
+
+### Verificación
+- `cargo test --workspace`: **63 pruebas correctas** (0 + 4 + 16 + 13 + 15 + 14 +
+  1 doctest).
+- `cargo fmt --all -- --check`, Clippy `-D warnings` y
+  `RUSTDOCFLAGS="-D warnings" cargo doc`: sin advertencias.
+- `scripts/check.ps1`: **Todo OK** (incluye las 25 pruebas del cliente Python y el
+  ciclo exportar → validar).
+- `scripts/coverage.ps1`: **90,27 % de líneas**, 88,52 % de regiones y 86,67 % de
+  funciones en `decompforge-core` (RNF-06: ≥ 80 %).
+- Documentación: README, estado de la Fase 1/RF-03/RNF-06, ADR-010 y nuevo
+  ADR-014.
+
+### Limitaciones conocidas (sin maquillar)
+- **Salto a función anónima**: si el destino aún no es una semilla conocida, el
+  salto se sigue dentro de la función actual; no hay pre-pase de llamadas.
+- **Branch-likely**: el *delay slot* se considera siempre ejecutado; puede
+  conservar código inalcanzable.
+- **Saltos indirectos y tablas de salto**: terminan el bloque sin aristas de
+  destino (`Jump(None)`).
+- **CFG derivado**: se borra y regenera en cada `analyze`; no se puede editar ni
+  conservar entre binarios distintos.
+- **Binarios sintéticos**: el análisis y los *delay slots* no se han probado con
+  ejecutables reales aportados por el usuario.
+- Siguen en pie las limitaciones de NSO (offsets de la imagen materializada,
+  límite de 2 GiB) y de sesiones anteriores (macOS sin equipo real, Ghidra solo
+  12.2).
+
+### Siguiente
+1. Publicar el hito (commit, push y comprobación del CI en los tres sistemas).
+2. Fase 3: NameForge (nombres con confianza y justificación).
+
+---

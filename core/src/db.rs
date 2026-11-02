@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 use rusqlite::Connection;
 
 /// Version del esquema SQLite que entiende este binario.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const MIGRATION_1: &str = r#"
 CREATE TABLE project (
@@ -145,8 +145,31 @@ CREATE TABLE comment (
 );
 "#;
 
+/// v3: grafo de flujo de control derivado del analisis. Cada instruccion
+/// pertenece como mucho a un bloque, y cada bloque a una funcion (`ownership`).
+const MIGRATION_3: &str = r#"
+CREATE TABLE basic_block (
+  id               INTEGER PRIMARY KEY,
+  function_address INTEGER NOT NULL,
+  address          INTEGER NOT NULL UNIQUE,
+  size             INTEGER NOT NULL,
+  instructions     INTEGER NOT NULL
+);
+CREATE INDEX idx_basic_block_function ON basic_block(function_address);
+CREATE INDEX idx_basic_block_range ON basic_block(address, size);
+
+CREATE TABLE cfg_edge (
+  src  INTEGER NOT NULL,
+  dst  INTEGER NOT NULL,
+  kind TEXT NOT NULL
+       CHECK (kind IN ('fallthrough','branch','jump','call','tail_call')),
+  PRIMARY KEY (src, dst, kind)
+);
+CREATE INDEX idx_cfg_edge_dst ON cfg_edge(dst);
+"#;
+
 /// Version y SQL de cada migracion, en orden.
-const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2)];
+const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_1), (2, MIGRATION_2), (3, MIGRATION_3)];
 
 /// Aplica las migraciones pendientes. Rechaza bases creadas por una version
 /// mas nueva del programa.

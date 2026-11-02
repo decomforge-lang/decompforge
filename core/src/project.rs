@@ -59,6 +59,10 @@ pub struct ProjectInfo {
     pub symbols: u64,
     /// Numero de funciones.
     pub functions: u64,
+    /// Numero de bloques basicos.
+    pub basic_blocks: u64,
+    /// Numero de aristas del CFG.
+    pub cfg_edges: u64,
     /// Numero de funciones por estado (detected, named, ...).
     pub functions_by_state: BTreeMap<String, u64>,
 }
@@ -453,6 +457,9 @@ impl Project {
 
         let tx = self.conn.transaction()?;
         let now = now_iso();
+        // El CFG es informacion derivada: se regenera entero en cada analisis.
+        tx.execute("DELETE FROM cfg_edge", [])?;
+        tx.execute("DELETE FROM basic_block", [])?;
         for f in &result.functions {
             tx.execute(
                 "INSERT INTO function (address, size, name, state, hash, updated_at)
@@ -475,14 +482,33 @@ impl Project {
                 params![e.src as i64, e.dst as i64],
             )?;
         }
+        for b in &result.blocks {
+            tx.execute(
+                "INSERT INTO basic_block (function_address, address, size, instructions)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![b.function as i64, b.start as i64, b.size() as i64, b.instructions as i64],
+            )?;
+        }
+        for e in &result.cfg_edges {
+            tx.execute(
+                "INSERT OR IGNORE INTO cfg_edge (src, dst, kind) VALUES (?1, ?2, ?3)",
+                params![e.src as i64, e.dst as i64, e.kind.as_str()],
+            )?;
+        }
         let summary = result.summary();
         tx.execute(
             "INSERT INTO audit_log (actor, action, detail, created_at) VALUES (?1, 'analyze', ?2, ?3)",
             params![
                 actor,
                 format!(
-                    "{} funciones, {} instrucciones, {} llamadas, truncado={}",
-                    summary.functions, summary.instructions, summary.call_edges, summary.truncated
+                    "{} funciones, {} instrucciones, {} llamadas, {} bloques, {} aristas CFG, \
+                     truncado={}",
+                    summary.functions,
+                    summary.instructions,
+                    summary.call_edges,
+                    summary.basic_blocks,
+                    summary.cfg_edges,
+                    summary.truncated
                 ),
                 now
             ],
@@ -519,6 +545,8 @@ impl Project {
                     sections: 0,
                     symbols: 0,
                     functions: 0,
+                    basic_blocks: 0,
+                    cfg_edges: 0,
                     functions_by_state: BTreeMap::new(),
                 })
             },
@@ -526,6 +554,8 @@ impl Project {
         info.sections = count("section")?;
         info.symbols = count("symbol")?;
         info.functions = count("function")?;
+        info.basic_blocks = count("basic_block")?;
+        info.cfg_edges = count("cfg_edge")?;
         let mut st = self.conn.prepare("SELECT state, COUNT(*) FROM function GROUP BY state")?;
         let rows =
             st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
@@ -534,6 +564,22 @@ impl Project {
             info.functions_by_state.insert(s, n);
         }
         Ok(info)
+    }
+
+    /// Funcion propietaria de la instruccion que empieza en `address`, segun
+    /// los bloques del ultimo analisis. `None` si la direccion no pertenece a
+    /// ninguna funcion detectada.
+    pub fn instruction_owner(&self, address: u64) -> Result<Option<u64>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT function_address FROM basic_block
+                 WHERE address <= ?1 AND ?1 < address + size
+                 ORDER BY address DESC LIMIT 1",
+                params![address as i64],
+                |r| r.get::<_, i64>(0).map(|v| v as u64),
+            )
+            .optional()?)
     }
 
     /// Exporta al formato de intercambio JSON (seccion 9.4 del documento).

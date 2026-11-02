@@ -41,6 +41,11 @@ pub struct Instruction {
     pub op_str: String,
     /// Clasificacion del flujo de control.
     pub flow: Flow,
+    /// La instruccion siguiente se ejecuta siempre antes de aplicar el salto,
+    /// la llamada o el retorno (*delay slot* de MIPS). Un salto condicional
+    /// solo ejecuta el hueco cuando la condicion se cumple; se modela como si
+    /// siempre se ejecutara para no perder codigo alcanzable.
+    pub delay_slot: bool,
 }
 
 impl Instruction {
@@ -189,8 +194,24 @@ impl Disassembler {
             Flow::Next
         };
 
-        Ok(Some(Instruction { address, size: size as u8, mnemonic, op_str, flow }))
+        let delay_slot = has_delay_slot(self.arch, &mnemonic, flow);
+        Ok(Some(Instruction { address, size: size as u8, mnemonic, op_str, flow, delay_slot }))
     }
+}
+
+/// Las ramas, saltos, llamadas y retornos de MIPS ejecutan la instruccion
+/// siguiente antes de transferir el control. `syscall`/`break`/`eret` no.
+///
+/// Las variantes *branch-likely* (`beql`, `bnel`, ...) solo ejecutan el hueco
+/// cuando la rama se toma; el analisis las trata como las normales y prefiere
+/// conservar codigo de mas a perder codigo alcanzable.
+fn has_delay_slot(arch: Arch, mnemonic: &str, flow: Flow) -> bool {
+    if arch != Arch::Mips {
+        return false;
+    }
+    let transfers =
+        matches!(flow, Flow::Call(_) | Flow::Jump(_) | Flow::CondJump(_) | Flow::Return);
+    transfers && !matches!(mnemonic, "syscall" | "break" | "eret" | "deret")
 }
 
 fn has_group(groups: &[InsnGroupId], group: u32) -> bool {
@@ -298,12 +319,31 @@ mod tests {
         let dis = Disassembler::new(Arch::Mips, Endian::Little, 32).unwrap();
         let call = dis.decode(&img, 0x0010_0000).unwrap().unwrap();
         assert_eq!(call.flow, Flow::Call(Some(0x0010_0010)));
+        assert!(call.delay_slot);
         let nop = dis.decode(&img, 0x0010_0004).unwrap().unwrap();
         assert_eq!(nop.flow, Flow::Next);
+        assert!(!nop.delay_slot);
         let branch = dis.decode(&img, 0x0010_0008).unwrap().unwrap();
         assert_eq!(branch.flow, Flow::CondJump(0x0010_000C));
+        assert!(branch.delay_slot);
         let ret = dis.decode(&img, 0x0010_000C).unwrap().unwrap();
         assert_eq!(ret.flow, Flow::Return);
+        assert!(ret.delay_slot);
+    }
+
+    #[test]
+    fn only_mips_flow_instructions_have_delay_slots() {
+        // `bl 0x10010` en PowerPC; `ret` en AArch64; `call` en x86-64.
+        for (arch, endian, bits, code, addr) in [
+            (Arch::PowerPc, Endian::Big, 32, vec![0x48, 0x00, 0x00, 0x11], 0x1_0000u64),
+            (Arch::Arm64, Endian::Little, 64, vec![0x04, 0x00, 0x00, 0x94], 0x40_0000),
+            (Arch::X86_64, Endian::Little, 64, vec![0xE8, 0x00, 0x00, 0x00, 0x00], 0x40_1000),
+        ] {
+            let img = image(&code, addr);
+            let dis = Disassembler::new(arch, endian, bits).unwrap();
+            let insn = dis.decode(&img, addr).unwrap().unwrap();
+            assert!(!insn.delay_slot, "{arch:?} no usa delay slot");
+        }
     }
 
     #[test]

@@ -52,8 +52,8 @@ funciones y llamadas. (+) No se pierde trabajo humano al reanalizar. (+) El
 análisis es robusto ante secciones truncadas o flujos que salen de la región.
 
 (-) El tamaño de función es la envolvente de las instrucciones alcanzadas: un
-salto incondicional directo puede unir una función con su epílogo compartido.
-(-) En MIPS el *delay slot* de `jr`/`return` no se incluye en la envolvente.
-(-) No hay todavía CFG ni ownership global de instrucciones; SPU queda pendiente.
+salto incondicional directo a una función anónima todavía no descubierta puede
+unirla con su epílogo compartido. El *ownership* global, los bloques básicos y
+los *delay slots* de MIPS se añadieron en [ADR-014](ADR-014-cfg-ownership-y-delay-slots.md).
 (-) Capstone 5 no marca `jal`/`jr` en MIPS ni `bl`/`blr` en PowerPC con los
 grupos genéricos, así que `disasm.rs` los reconoce por mnemónico.
