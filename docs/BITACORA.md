@@ -372,6 +372,11 @@ Registro cronológico de lo que se va haciendo y por qué. Cada sesión añade u
   #1](https://github.com/decomforge-lang/decompforge/actions/runs/41315503527)):
   `success` en `lint`, `test` (Windows/Linux/macOS), `coverage`, `schema` y
   `adapters`. No hizo falta tocar el flujo de trabajo.
+- La segunda ejecución (`cc666be`) falló solo por infraestructura: el trabajo
+  `test (macos-latest)` quedó en cola sin runner ("not acquired by Runner ...
+  after multiple attempts") por falta de capacidad de macOS arm64. La matriz
+  pasa a `macos-15-intel` (macOS x86_64, otra cola) manteniendo la cobertura de
+  RNF-05.
 
 **Ghidra compilado y probado por primera vez**
 - Instalado Ghidra 12.2 y JDK 25 (Ghidra 12.2 declara

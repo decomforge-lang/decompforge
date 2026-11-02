@@ -50,7 +50,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # `macos-15-intel` en vez de `macos-latest` (arm64): GitHub avisa de
+        # falta de capacidad para macOS arm64 y el trabajo puede quedarse en
+        # cola hasta agotar los intentos. Un macOS Intel sigue cubriendo RNF-05.
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v4
 

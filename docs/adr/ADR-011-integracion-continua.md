@@ -13,7 +13,7 @@ fuera de `scripts/check.ps1`.
 
 ## Decisión
 1. **GitHub Actions** como CI, con el flujo en `.github/workflows/ci.yml`.
-2. **Matriz de pruebas** `ubuntu-latest`, `windows-latest` y `macos-latest` con
+2. **Matriz de pruebas** `ubuntu-latest`, `windows-latest` y `macos-15-intel` con
    Rust estable. Windows usa el toolchain MSVC por defecto del *runner*, lo que
    además comprueba que el proyecto no depende de MinGW. El desarrollo local en
    Windows sigue usando GNU.
