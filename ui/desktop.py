@@ -18,7 +18,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PARENT = os.path.dirname(ROOT)
@@ -107,12 +107,14 @@ class DecompForgeApp(tk.Tk):
     def _build_layout(self):
         top = tk.Frame(self, bg="#171a21", padx=10, pady=8)
         top.pack(fill="x")
-        tk.Label(top, text="Proyecto:", bg="#171a21", fg="#9aa3b2").pack(side="left")
-        tk.Entry(top, textvariable=self.project, width=40, bg="#1e222b", fg="#e6e8ee", insertbackground="#e6e8ee", relief="flat").pack(side="left", padx=6)
-        tk.Button(top, text="Abrir", command=self.act_open_project, bg="#5b8def", fg="white", relief="flat", padx=10).pack(side="left")
-        tk.Label(top, text="Binario:", bg="#171a21", fg="#9aa3b2").pack(side="left", padx=(16,0))
+        tk.Label(top, text="Binario:", bg="#171a21", fg="#9aa3b2").pack(side="left")
         tk.Entry(top, textvariable=self.binary, width=46, bg="#1e222b", fg="#e6e8ee", insertbackground="#e6e8ee", relief="flat").pack(side="left", padx=6)
         tk.Button(top, text="Examinar", command=self.act_pick_binary, bg="#5b8def", fg="white", relief="flat", padx=10).pack(side="left")
+        tk.Label(top, text="Carpeta proyecto:", bg="#171a21", fg="#9aa3b2").pack(side="left", padx=(16,0))
+        self.projdir = tk.StringVar(value="")
+        tk.Entry(top, textvariable=self.projdir, width=34, bg="#1e222b", fg="#e6e8ee", insertbackground="#e6e8ee", relief="flat").pack(side="left", padx=6)
+        tk.Button(top, text="Examinar", command=self.act_pick_projdir, bg="#5b8def", fg="white", relief="flat", padx=10).pack(side="left")
+        self.project = tk.StringVar(value="")
         tk.Label(top, text="Plataforma:", bg="#171a21", fg="#9aa3b2").pack(side="left", padx=(16,0))
         ttk.Combobox(top, textvariable=self.platform, values=["ps2","ps3","switch","pc","gamecube"], width=10).pack(side="left", padx=6)
 
@@ -139,15 +141,31 @@ class DecompForgeApp(tk.Tk):
         self.update_idletasks()
 
     # ---------- helpers ----------
-    def act_open_project(self):
-        p = filedialog.askopenfilename(filetypes=[("Proyecto", "*.dfproj"), ("Todos", "*.*")])
-        if p:
-            self.project.set(p)
-
     def act_pick_binary(self):
         p = filedialog.askopenfilename(filetypes=[("Binario", "*.*")])
         if p:
             self.binary.set(p)
+            if not self.projdir.get().strip():
+                self.projdir.set(os.path.dirname(p) or ".")
+        d = filedialog.askdirectory()
+        if d:
+            self.projdir.set(d)
+
+    def _ensure_project(self, binp):
+        proj = self.project.get().strip()
+        if proj:
+            return proj
+        if not binp:
+            return ""
+        base = os.path.splitext(os.path.basename(binp))[0]
+        dest = self.projdir.get().strip() or os.path.dirname(binp) or "."
+        proj = os.path.join(dest, base + ".dfproj")
+        if not os.path.exists(proj):
+            self.log(f"$ decompforge init {base} --dir {dest}")
+            r = subprocess.run([BIN, "init", base, "--dir", dest], capture_output=True, text=True)
+            self.log(r.stdout + (r.stderr if r.stderr else ""))
+        self.project.set(proj)
+        return proj
 
     def _ensure_project(self, binp):
         proj = self.project.get().strip()
@@ -222,7 +240,7 @@ class DecompForgeApp(tk.Tk):
         if not binp or not proj:
             messagebox.showwarning("Faltan datos", "Indica binario y proyecto.")
             return
-        prov = tk.simpledialog.askstring("Proveedor IA", "heuristic / openai / anthropic / gemini", initialvalue="heuristic")
+        prov = simpledialog.askstring("Proveedor IA", "heuristic / openai / anthropic / gemini", initialvalue="heuristic")
         if prov is None:
             return
         prov = prov.strip().lower() or "heuristic"
@@ -230,12 +248,12 @@ class DecompForgeApp(tk.Tk):
         if batch:
             args.insert(2, "--batch")
         else:
-            func = tk.simpledialog.askstring("Función", "Dirección (0x...):")
+            func = simpledialog.askstring("Función", "Dirección (0x...):")
             if not func:
                 return
             args += ["--function", func]
         if prov != "heuristic":
-            key = tk.simpledialog.askstring("API Key", f"Clave para {prov} (o deja vacío para usar variable de entorno):", show="*")
+            key = simpledialog.askstring("API Key", f"Clave para {prov} (o deja vacío para usar variable de entorno):", show="*")
             cfg_path = os.path.join(os.path.dirname(proj) or ".", "nameforge.json")
             cfg = {
                 "style": {"case": "snake_case", "prefix": "", "banned": [], "max_length": 64},
@@ -270,7 +288,7 @@ class DecompForgeApp(tk.Tk):
         if not proj:
             messagebox.showwarning("Faltan datos", "Indica proyecto.")
             return
-        state = tk.simpledialog.askstring("Estado", "pending/accepted/rejected/all", initialvalue="pending") or "pending"
+        state = simpledialog.askstring("Estado", "pending/accepted/rejected/all", initialvalue="pending") or "pending"
         self.log(f"$ decompforge name list --project {proj} --state {state} --json")
         run_cli(["name", "list", "--project", proj, "--state", state, "--json"], on_done=lambda c, o: self._on_name_list(c, o))
 
@@ -290,7 +308,7 @@ class DecompForgeApp(tk.Tk):
         if not proj:
             messagebox.showwarning("Faltan datos", "Indica proyecto.")
             return
-        nid = tk.simpledialog.askinteger("Aceptar", "ID de la propuesta:")
+        nid = simpledialog.askinteger("Aceptar", "ID de la propuesta:")
         if nid is None:
             return
         force = messagebox.askyesno("Force", "¿Forzar si ya tiene nombre?")
@@ -305,7 +323,7 @@ class DecompForgeApp(tk.Tk):
         if not proj:
             messagebox.showwarning("Faltan datos", "Indica proyecto.")
             return
-        nid = tk.simpledialog.askinteger("Rechazar", "ID de la propuesta:")
+        nid = simpledialog.askinteger("Rechazar", "ID de la propuesta:")
         if nid is None:
             return
         self.log(f"$ decompforge name reject {nid} --project {proj}")
